@@ -226,7 +226,7 @@ def _load_mlx_model(model_name: str):
         from mlx_lm import load  # type: ignore
     except ModuleNotFoundError as exc:
         raise LocalLLMUnavailableError(
-            "mlx-lm이 설치되지 않았습니다. scripts/install-mlx-qwen.sh를 먼저 실행하세요."
+            "mlx-lm이 설치되지 않았습니다. scripts/install-mlx-gemma.sh를 먼저 실행하세요."
         ) from exc
 
     try:
@@ -252,7 +252,7 @@ def summarize_interview_note_with_local_llm(
         from mlx_lm.sample_utils import make_sampler  # type: ignore
     except ModuleNotFoundError as exc:
         raise LocalLLMUnavailableError(
-            "mlx-lm이 설치되지 않았습니다. scripts/install-mlx-qwen.sh를 먼저 실행하세요."
+            "mlx-lm이 설치되지 않았습니다. scripts/install-mlx-gemma.sh를 먼저 실행하세요."
         ) from exc
 
     model, tokenizer = _load_mlx_model(settings.local_llm_model)
@@ -359,7 +359,7 @@ def summarize_job_post_with_local_llm(
         from mlx_lm.sample_utils import make_sampler  # type: ignore
     except ModuleNotFoundError as exc:
         raise LocalLLMUnavailableError(
-            "mlx-lm이 설치되지 않았습니다. scripts/install-mlx-qwen.sh를 먼저 실행하세요."
+            "mlx-lm이 설치되지 않았습니다. scripts/install-mlx-gemma.sh를 먼저 실행하세요."
         ) from exc
 
     model, tokenizer = _load_mlx_model(settings.local_llm_model)
@@ -465,7 +465,7 @@ def summarize_dashboard_with_local_llm(
         from mlx_lm.sample_utils import make_sampler  # type: ignore
     except ModuleNotFoundError as exc:
         raise LocalLLMUnavailableError(
-            "mlx-lm이 설치되지 않았습니다. scripts/install-mlx-qwen.sh를 먼저 실행하세요."
+            "mlx-lm이 설치되지 않았습니다. scripts/install-mlx-gemma.sh를 먼저 실행하세요."
         ) from exc
 
     model, tokenizer = _load_mlx_model(settings.local_llm_model)
