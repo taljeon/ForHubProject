@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.forme.jobhub.digest-morning</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/zsh</string>
+      <string>__FORME_ROOT__/scripts/send-digest-mail.sh</string>
+      <string>morning</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Hour</key>
+      <integer>6</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>__FORME_ROOT__</string>
+    <key>StandardOutPath</key>
+    <string>__FORME_ROOT__/data/logs/digest-mail-morning.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__FORME_ROOT__/data/logs/digest-mail-morning.launchd.err.log</string>
+  </dict>
+</plist>

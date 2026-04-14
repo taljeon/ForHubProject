@@ -1,0 +1,1770 @@
+{% macro pager(snapshot) -%}
+  {% if snapshot.pagination and snapshot.pagination.total_pages > 1 %}
+  <div class="pager">
+    {% if snapshot.pagination.has_prev %}
+    <a
+      class="pager-link"
+      href="/?view={{ snapshot.view }}&page={{ snapshot.pagination.prev_page }}{% if snapshot.view == 'mail' and snapshot.auto_refresh_seconds %}&auto_refresh={{ snapshot.auto_refresh_seconds }}{% endif %}{% if snapshot.view == 'mail' %}&mail_kind={{ snapshot.mail_kind }}{% endif %}{% if snapshot.view == 'mypage_entry' %}&entry_status={{ snapshot.entry_status }}{% endif %}{% if snapshot.view == 'calendar_review' %}&calendar_status={{ snapshot.calendar_status }}{% endif %}{% if snapshot.view == 'jobs' %}&job_kind={{ snapshot.job_kind }}&grad_year={{ snapshot.job_grad_year }}#job-results{% endif %}"
+    >
+      前へ
+    </a>
+    {% else %}
+    <span class="pager-link disabled">前へ</span>
+    {% endif %}
+
+    <span class="pager-state">
+      {{ snapshot.pagination.page }} / {{ snapshot.pagination.total_pages }}
+      <small>合計 {{ snapshot.pagination.total_count }}件</small>
+    </span>
+
+    {% if snapshot.pagination.has_next %}
+    <a
+      class="pager-link"
+      href="/?view={{ snapshot.view }}&page={{ snapshot.pagination.next_page }}{% if snapshot.view == 'mail' and snapshot.auto_refresh_seconds %}&auto_refresh={{ snapshot.auto_refresh_seconds }}{% endif %}{% if snapshot.view == 'mail' %}&mail_kind={{ snapshot.mail_kind }}{% endif %}{% if snapshot.view == 'mypage_entry' %}&entry_status={{ snapshot.entry_status }}{% endif %}{% if snapshot.view == 'calendar_review' %}&calendar_status={{ snapshot.calendar_status }}{% endif %}{% if snapshot.view == 'jobs' %}&job_kind={{ snapshot.job_kind }}&grad_year={{ snapshot.job_grad_year }}#job-results{% endif %}"
+    >
+      次へ
+    </a>
+    {% else %}
+    <span class="pager-link disabled">次へ</span>
+    {% endif %}
+  </div>
+  {% endif %}
+{%- endmacro %}
+
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ settings.app_name }}</title>
+    {% if snapshot.view == 'mail' and snapshot.auto_refresh_seconds %}
+    <meta
+      http-equiv="refresh"
+      content="{{ snapshot.auto_refresh_seconds }};url=/?view=mail&page={{ snapshot.page }}&auto_refresh={{ snapshot.auto_refresh_seconds }}&mail_kind={{ snapshot.mail_kind }}"
+    />
+    {% endif %}
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">ローカル就活管理ハブ</p>
+          <h1>{{ settings.app_name }}</h1>
+          <p class="lede">
+            メール、求人、応募、アカウントをローカルで管理し、必要な画面にすぐ移動できます。
+          </p>
+        </div>
+        <div class="hero-aside">
+          <div class="aside-block">
+            <span class="aside-label">基準日</span>
+            <strong>{{ snapshot.today }}</strong>
+          </div>
+          <div class="aside-block">
+            <span class="aside-label">要約生成</span>
+            <strong>{{ snapshot.next_digest_time_hint }}</strong>
+          </div>
+          <div class="aside-block">
+            <span class="aside-label">ストレージ</span>
+            <strong>{{ settings.db_path.name }}</strong>
+          </div>
+        </div>
+      </section>
+
+      {% if notice %}
+      <section class="notice">{{ notice }}</section>
+      {% endif %}
+
+      <section class="metrics">
+        <article class="metric-card">
+          <span class="metric-label">追跡ソース</span>
+          <strong>{{ snapshot.metrics.tracked_sources }}</strong>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">公開求人</span>
+          <strong>{{ snapshot.metrics.open_jobs }}</strong>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">応募状況</span>
+          <strong>{{ snapshot.metrics.tracked_applications }}</strong>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">保存済みメール</span>
+          <strong>{{ snapshot.metrics.cached_messages }}</strong>
+        </article>
+      </section>
+
+      <section class="view-nav">
+        {% for view in snapshot.views %}
+        <a class="view-tab{% if view.key == snapshot.view %} active{% endif %}" href="/?view={{ view.key }}">
+          <span>{{ view.label }}</span>
+          {% if view.count is not none %}<strong>{{ view.count }}</strong>{% endif %}
+        </a>
+        {% endfor %}
+      </section>
+
+      <section class="section-banner">
+        <div>
+          <h2>{{ snapshot.view_meta.title }}</h2>
+          <p>{{ snapshot.view_meta.description }}</p>
+        </div>
+        {% if snapshot.view == 'mail' or snapshot.view == 'mypage_entry' or snapshot.view == 'calendar_review' %}
+        <div class="toolbar">
+          <form method="post" action="/mail/sync">
+            <input type="hidden" name="return_view" value="{{ snapshot.view }}" />
+            <input type="hidden" name="return_page" value="{{ snapshot.page }}" />
+            <input type="hidden" name="auto_refresh" value="{{ snapshot.auto_refresh_seconds }}" />
+            <input type="hidden" name="mail_kind" value="{{ snapshot.mail_kind }}" />
+            <input type="hidden" name="entry_status" value="{{ snapshot.entry_status }}" />
+            <input type="hidden" name="calendar_status" value="{{ snapshot.calendar_status }}" />
+            <button type="submit">今すぐメール同期</button>
+          </form>
+          <form method="post" action="/mail/ingest-links">
+            <input type="hidden" name="return_view" value="{{ snapshot.view }}" />
+            <input type="hidden" name="return_page" value="{{ snapshot.page }}" />
+            <input type="hidden" name="auto_refresh" value="{{ snapshot.auto_refresh_seconds }}" />
+            <input type="hidden" name="mail_kind" value="{{ snapshot.mail_kind }}" />
+            <input type="hidden" name="entry_status" value="{{ snapshot.entry_status }}" />
+            <input type="hidden" name="calendar_status" value="{{ snapshot.calendar_status }}" />
+            <button type="submit" class="secondary">メールとアカウントを再連携</button>
+          </form>
+          {% if snapshot.view == 'mail' %}
+          <a class="button-link secondary" href="/?view=mail&page={{ snapshot.page }}&mail_kind={{ snapshot.mail_kind }}">画面を更新</a>
+          <a class="button-link{% if snapshot.auto_refresh_seconds == 0 %} selected{% else %} secondary{% endif %}" href="/?view=mail&page=1&mail_kind={{ snapshot.mail_kind }}">自動オフ</a>
+          <a class="button-link{% if snapshot.auto_refresh_seconds == 30 %} selected{% else %} secondary{% endif %}" href="/?view=mail&page=1&auto_refresh=30&mail_kind={{ snapshot.mail_kind }}">30秒</a>
+          <a class="button-link{% if snapshot.auto_refresh_seconds == 60 %} selected{% else %} secondary{% endif %}" href="/?view=mail&page=1&auto_refresh=60&mail_kind={{ snapshot.mail_kind }}">60秒</a>
+          {% else %}
+          {% if snapshot.view == 'mypage_entry' %}
+          <a class="button-link secondary" href="/?view=mypage_entry&page={{ snapshot.page }}&entry_status={{ snapshot.entry_status }}">画面を更新</a>
+          {% else %}
+          <a class="button-link secondary" href="/?view=calendar_review&page={{ snapshot.page }}&calendar_status={{ snapshot.calendar_status }}">画面を更新</a>
+          {% endif %}
+          {% endif %}
+        </div>
+        {% endif %}
+      </section>
+
+      {% if snapshot.view == 'overview' %}
+      <section class="panel-grid two">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>クイック操作</h2>
+              <p>デモデータ、要約ファイル、ローカルパスをすぐ確認できます。</p>
+            </div>
+          </div>
+          <div class="action-row">
+            {% if settings.enable_demo_tools %}
+            <form method="post" action="/seed-demo">
+              <button type="submit">デモデータ投入</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/digests/build">
+              <button type="submit" class="secondary">要約ファイル作成</button>
+            </form>
+            <form method="post" action="/digests/build-local">
+              <button type="submit" class="secondary">LLM全体ブリーフ</button>
+            </form>
+            <a class="button-link secondary" href="/digests/latest">最新要約を見る</a>
+          </div>
+          <details class="disclosure-card inline-disclosure">
+            <summary class="disclosure-summary">
+              <div class="disclosure-copy">
+                <strong>ローカルパスとストレージ</strong>
+                <p>OAuth、blob、digest のパスは必要なときだけ開きます。</p>
+              </div>
+              <span class="disclosure-toggle">開く</span>
+            </summary>
+            <div class="disclosure-body compact-body">
+              <div class="info-stack">
+                <div class="info-row">
+                  <span>OAuthファイル</span>
+                  <code>{{ settings.gmail_credentials_path }}</code>
+                </div>
+                <div class="info-row">
+                  <span>Playwright状態</span>
+                  <code>{{ settings.playwright_auth_dir }}</code>
+                </div>
+                <div class="info-row">
+                  <span>要約アーカイブ</span>
+                  <code>{{ settings.digest_dir }}</code>
+                </div>
+                <div class="info-row">
+                  <span>体験記ノート保存方式</span>
+                  <code>原文は blob、メタデータは SQLite</code>
+                </div>
+                <div class="info-row">
+                  <span>Blob ストレージ</span>
+                  <code>{{ settings.blob_backend }} / {{ settings.blob_dir }}</code>
+                </div>
+                {% if snapshot.latest_digest %}
+                <div class="info-row">
+                  <span>最新要約</span>
+                  <code>{{ snapshot.latest_digest.digest_date }} / {{ snapshot.latest_digest.generated_at }}</code>
+                </div>
+                {% if snapshot.llm_overview and snapshot.llm_overview.model %}
+                <div class="info-row">
+                  <span>最新LLM</span>
+                  <code>{{ snapshot.llm_overview.model }}</code>
+                </div>
+                {% endif %}
+                {% endif %}
+              </div>
+            </div>
+          </details>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>メールアカウント状態</h2>
+              <p>基準メールボックスと同期履歴を短く確認します。</p>
+            </div>
+          </div>
+          {% if snapshot.mail_accounts %}
+          <div class="stack-list scroll-list">
+            {% for account in snapshot.mail_accounts %}
+            <div class="stack-item">
+              <div class="row-between top">
+                <strong>{{ account.email }}</strong>
+                {% if account.is_authoritative %}<span class="chip">基準メール</span>{% endif %}
+              </div>
+              <p>history ID {{ account.last_history_id or '未同期' }}</p>
+              <p>フル {{ account.last_full_sync_at or '-' }}</p>
+              <p>差分 {{ account.last_partial_sync_at or '-' }}</p>
+              {% if account.last_error %}<p class="warn">{{ account.last_error }}</p>{% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="empty">Gmail同期履歴はまだありません。</p>
+          {% endif %}
+        </article>
+      </section>
+
+      <section class="panel-grid two">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>今日の予定</h2>
+              <p>메일과 캘린더에서 연결된 오늘 일정을 시간순으로 먼저 봅니다.</p>
+            </div>
+            <a class="button-link secondary" href="/?view=applications">応募を見る</a>
+          </div>
+          {% if snapshot.today_schedule_events %}
+          <div class="stack-list">
+            {% for event in snapshot.today_schedule_events %}
+            <div class="stack-item">
+              <div class="row-between top">
+                <strong>{{ event.summary_label }}</strong>
+                <span class="chip">{{ event.time_range_label }}</span>
+              </div>
+              <p>{{ event.location_label }}</p>
+              {% if event.details %}<p>{{ event.details }}</p>{% endif %}
+              <div class="row-inline">
+                {% if event.calendar_event_link %}
+                <a class="inline-link" href="{{ event.calendar_event_link }}" target="_blank" rel="noreferrer">カレンダーを開く</a>
+                {% endif %}
+                {% if event.message_id %}
+                <a class="inline-link" href="/mail/messages/{{ event.message_id }}/open-gmail" target="_blank" rel="noreferrer">Gmailで見る</a>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="empty">今日カレンダーに入った予定はありません。</p>
+          {% endif %}
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>MyPage登録待ち</h2>
+              <p>昨日以降の候補メールだけを残して、毎朝ここから 처리します。</p>
+            </div>
+            <a class="button-link secondary" href="/?view=mypage_entry">MyPage入力へ</a>
+          </div>
+          {% if snapshot.previews.mypage_pending %}
+          <div class="stack-list">
+            {% for message in snapshot.previews.mypage_pending %}
+            <div class="stack-item">
+              <div class="row-between top">
+                <strong>{{ message.entry_company_candidate or '未確認' }}</strong>
+                <span class="chip warn-chip">{{ message.manual_entry_status_label }}</span>
+              </div>
+              <p class="primary">{{ message.subject or '(件名なし)' }}</p>
+              <p>{{ message.entry_login_id_candidate or 'ログインID未抽出' }}</p>
+              <div class="row-inline">
+                <a class="inline-link" href="/mail/messages/{{ message.gmail_message_id }}/open-gmail" target="_blank" rel="noreferrer">Gmailで見る</a>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="empty">昨日以降のMyPage登録待ちはありません。</p>
+          {% endif %}
+        </article>
+      </section>
+
+      <section class="panel-grid two">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>日程確認待ち</h2>
+              <p>자동 등록을 보류한 일정 후보입니다. Gmail을 열고 확인한 뒤, 캘린더 처리 여부만 수동으로 끝냅니다.</p>
+            </div>
+            <a class="button-link secondary" href="/?view=calendar_review">日程確認へ</a>
+          </div>
+          {% if snapshot.previews.calendar_review %}
+          <div class="stack-list">
+            {% for message in snapshot.previews.calendar_review %}
+            <div class="stack-item">
+              <div class="row-between top">
+                <strong>{{ message.calendar_company_candidate or '未確認' }}</strong>
+                <span class="chip warn-chip">{{ message.manual_calendar_status_label }}</span>
+              </div>
+              <p class="primary">{{ message.subject or '(件名なし)' }}</p>
+              <p>{{ message.calendar_time_range_label }} / {{ message.calendar_location_label }}</p>
+              <p>{{ message.calendar_review_reason_label }}</p>
+              <div class="row-inline">
+                <a class="inline-link" href="/mail/messages/{{ message.gmail_message_id }}/open-gmail" target="_blank" rel="noreferrer">Gmailで見る</a>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="empty">昨日以降の確認待ち 일정 후보는 없습니다。</p>
+          {% endif %}
+        </article>
+      </section>
+
+      {% if snapshot.llm_overview and snapshot.llm_overview.headline %}
+      <details class="disclosure-card">
+        <summary class="disclosure-summary">
+          <div class="disclosure-copy">
+            <strong>LLM全体ブリーフ</strong>
+            <p>{{ snapshot.llm_overview.headline }}</p>
+          </div>
+          <span class="disclosure-toggle">開く</span>
+        </summary>
+        <div class="disclosure-body compact-body">
+          <div class="info-stack">
+            {% if snapshot.llm_overview.top_actions %}
+            <div class="info-row">
+              <span>今日の優先アクション</span>
+              <ul class="plain-list">
+                {% for item in snapshot.llm_overview.top_actions %}
+                <li>{{ item }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+            {% if snapshot.llm_overview.application_risks %}
+            <div class="info-row">
+              <span>応募リスク</span>
+              <ul class="plain-list">
+                {% for item in snapshot.llm_overview.application_risks %}
+                <li>{{ item }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+            {% if snapshot.llm_overview.priority_companies %}
+            <div class="info-row">
+              <span>優先企業</span>
+              <ul class="plain-list">
+                {% for item in snapshot.llm_overview.priority_companies %}
+                <li>{{ item }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </details>
+      {% endif %}
+
+      <details class="disclosure-card">
+        <summary class="disclosure-summary">
+          <div class="disclosure-copy">
+            <strong>今日の変化</strong>
+            <p>新着求人、更新、締切、最新メールは必要なときだけ開きます。</p>
+          </div>
+          <span class="disclosure-toggle">開く</span>
+        </summary>
+        <div class="disclosure-body compact-body">
+      <section class="summary-grid four">
+        <article class="panel compact">
+          <div class="panel-header tight">
+            <div>
+              <h2>本日の新着求人</h2>
+            </div>
+          </div>
+          {% if snapshot.highlights.new_jobs %}
+          <div class="stack-list scroll-list">
+            {% for job in snapshot.highlights.new_jobs %}
+            <div class="mini-item">
+              <strong>{{ job.company_name or '未確認' }}</strong>
+              <p>{{ job.title }}</p>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="empty">新着求人なし</p>
+          {% endif %}
+        </article>
+
+        <article class="panel compact">
+          <div class="panel-header tight">
+            <div>
+              <h2>更新求人</h2>
+            </div>
+          </div>
+          {% if snapshot.highlights.changed_jobs %}
+          <div class="stack-list scroll-list">
+            {% for job in snapshot.highlights.changed_jobs %}
+            <div class="mini-item">
+              <strong>{{ job.company_name or '未確認' }}</strong>
+              <p>{{ job.title }}</p>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="empty">更新なし</p>
+          {% endif %}
+        </article>
+
+        <article class="panel compact">
+          <div class="panel-header tight">
+            <div>
+              <h2>締切間近</h2>
+            </div>
+          </div>
+          {% if snapshot.highlights.deadlines %}
+          <div class="stack-list scroll-list">
+            {% for job in snapshot.highlights.deadlines %}
+            <div class="mini-item">
+              <strong>{{ job.company_name or '未確認' }}</strong>
+              <p>{{ job.deadline or '未定' }} · {{ job.title }}</p>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="empty">締切間近なし</p>
+          {% endif %}
+        </article>
+
+        <article class="panel compact">
+          <div class="panel-header tight">
+            <div>
+              <h2>最新メール</h2>
+            </div>
+          </div>
+          {% if snapshot.previews.messages %}
+          <div class="stack-list scroll-list">
+            {% for message in snapshot.previews.messages %}
+            <div class="mini-item">
+              <strong>{{ message.subject or '(件名なし)' }}</strong>
+              <p>{{ message.sender or '-' }}</p>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="empty">メールなし</p>
+          {% endif %}
+        </article>
+      </section>
+
+      <section class="panel-grid three">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>最新求人プレビュー</h2>
+              <p>最新求人はまず5件だけ見て、残りは求人タブで確認します。</p>
+            </div>
+          </div>
+          {% if snapshot.previews.posts %}
+          <div class="stack-list scroll-list">
+            {% for post in snapshot.previews.posts %}
+            <div class="stack-item">
+              <div class="row-between top">
+                <strong>{{ post.company_name or '未確認' }}</strong>
+                <span class="chip">適合度 {{ "%.0f"|format(post.engineer_score) }}</span>
+              </div>
+              <p class="primary">{{ post.title }}</p>
+              <p>{{ post.location or '勤務地 未定' }}</p>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="empty">求人はありません。</p>
+          {% endif %}
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>応募アクションプレビュー</h2>
+              <p>最近更新された応募を5件だけ先に表示します。</p>
+            </div>
+          </div>
+          {% if snapshot.previews.applications %}
+          <div class="stack-list">
+            {% for application in snapshot.previews.applications %}
+            <div class="stack-item">
+              <div class="row-between top">
+                <strong>{{ application.company_name or '未確認' }}</strong>
+                <span class="chip">優先 {{ application.my_priority }}</span>
+              </div>
+              <p>{{ application.current_stage|ja_text }}</p>
+              <p>{{ application.next_action or '次のアクションなし' }}</p>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="empty">応募履歴はありません。</p>
+          {% endif %}
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>サイトとソース</h2>
+              <p>最近更新または確認された項目を5件だけ表示し、残りは各タブで見ます。</p>
+            </div>
+          </div>
+          <div class="stack-list dual-preview scroll-list">
+            {% for resource in snapshot.previews.resources %}
+            <div class="mini-item{% if resource.kind == 'ソース' %} muted{% endif %}">
+              <strong>{{ resource.title or '未確認' }}</strong>
+              <p>{{ resource.subtitle or '-' }}</p>
+              <p class="mini-meta">{{ resource.kind }}</p>
+            </div>
+            {% endfor %}
+          </div>
+        </article>
+      </section>
+        </div>
+      </details>
+      {% endif %}
+
+      {% if snapshot.view == 'mypage_entry' %}
+      <section class="summary-grid four">
+        {% for filter in snapshot.entry_filters %}
+        <article class="panel compact">
+          <div class="panel-header tight">
+            <div>
+              <h2>{{ filter.label }}</h2>
+              <p>{{ snapshot.entry_filter_counts[filter.key] }}件</p>
+            </div>
+            <a class="button-link{% if snapshot.entry_status == filter.key %} selected{% else %} secondary{% endif %}" href="/?view=mypage_entry&page=1&entry_status={{ filter.key }}">
+              表示
+            </a>
+          </div>
+        </article>
+        {% endfor %}
+      </section>
+
+      <section class="content-layout">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>MyPage登録候補メール</h2>
+              <p>{{ snapshot.entry_since_label }} 以降に届いた候補メールだけを並べます。Gmailを開いて確認し、登録済みかどうかはここで手動更新します。</p>
+            </div>
+            <span class="chip">現在 {{ snapshot.entry_filter_counts[snapshot.entry_status] }}件</span>
+          </div>
+          {% if snapshot.manual_entry_messages %}
+          <div class="stack-list narrow-list">
+            {% for message in snapshot.manual_entry_messages %}
+            <article class="stack-item application-card">
+              <div class="row-between top compact-row">
+                <strong class="mail-subject">{{ message.subject or '(件名なし)' }}</strong>
+                <span class="chip mail-time">{{ message.received_at or '-' }}</span>
+              </div>
+              <div class="row-inline chips subtle-top">
+                {% if message.entry_company_candidate %}<span class="chip muted-chip">{{ message.entry_company_candidate }}</span>{% endif %}
+                {% if message.entry_login_id_candidate %}<span class="chip muted-chip">ID {{ message.entry_login_id_candidate }}</span>{% endif %}
+                <span class="chip{% if message.manual_entry_status_resolved == 'done' %}{% else %} warn-chip{% endif %}">{{ message.manual_entry_status_label }}</span>
+                {% if message.linked_site_account_id %}<span class="chip">自動候補あり</span>{% endif %}
+              </div>
+              <p class="primary mail-sender">{{ message.sender or '-' }}</p>
+              <p class="mail-snippet">{{ message.snippet or '-' }}</p>
+              <p class="meta-line">受信アカウント {{ message.account_email or '-' }}</p>
+              {% if message.linked_account_name %}
+              <p class="meta-line">候補アカウント {{ message.linked_account_name }}{% if message.linked_account_login_id %} / ID {{ message.linked_account_login_id }}{% endif %}</p>
+              {% endif %}
+              {% if message.manual_entry_checked_at %}
+              <p class="meta-line">最終更新 {{ message.manual_entry_checked_at }}</p>
+              {% endif %}
+              <div class="row-inline">
+                <a class="inline-link" href="/mail/messages/{{ message.gmail_message_id }}/open-gmail" target="_blank" rel="noreferrer">Gmailで見る</a>
+                {% if message.linked_account_mypage_url %}
+                <a class="inline-link" href="{{ message.linked_account_mypage_url }}" target="_blank" rel="noreferrer">MyPageを開く</a>
+                {% endif %}
+              </div>
+
+              <div class="row-inline">
+                <form method="post" action="/mail/manual-entry-status">
+                  <input type="hidden" name="gmail_message_id" value="{{ message.gmail_message_id }}" />
+                  <input type="hidden" name="manual_entry_status" value="done" />
+                  <input type="hidden" name="return_view" value="mypage_entry" />
+                  <input type="hidden" name="return_page" value="{{ snapshot.page }}" />
+                  <input type="hidden" name="entry_status" value="{{ snapshot.entry_status }}" />
+                  <button type="submit" class="{% if message.manual_entry_status_resolved == 'done' %}secondary{% endif %}">登録済みにする</button>
+                </form>
+                <form method="post" action="/mail/manual-entry-status">
+                  <input type="hidden" name="gmail_message_id" value="{{ message.gmail_message_id }}" />
+                  <input type="hidden" name="manual_entry_status" value="pending" />
+                  <input type="hidden" name="return_view" value="mypage_entry" />
+                  <input type="hidden" name="return_page" value="{{ snapshot.page }}" />
+                  <input type="hidden" name="entry_status" value="{{ snapshot.entry_status }}" />
+                  <button type="submit" class="secondary">未登録に戻す</button>
+                </form>
+              </div>
+
+              <details class="disclosure-card inline-disclosure">
+                <summary class="disclosure-summary">
+                  <div class="disclosure-copy">
+                    <strong>アカウント保存</strong>
+                    <p>会社名、ログインID、MyPage URL を必要な範囲だけ補正して保存します。</p>
+                  </div>
+                  <span class="disclosure-toggle">開く</span>
+                </summary>
+                <div class="disclosure-body compact-body">
+                  <form method="post" action="/site-accounts" class="form-grid compact-form">
+                    <input type="hidden" name="return_view" value="mypage_entry" />
+                    <input type="hidden" name="return_page" value="{{ snapshot.page }}" />
+                    <input type="hidden" name="entry_status" value="{{ snapshot.entry_status }}" />
+                    <input type="hidden" name="source_gmail_message_id" value="{{ message.gmail_message_id }}" />
+                    <input type="hidden" name="mark_manual_entry_done" value="yes" />
+                    <input type="hidden" name="email_migrated" value="{{ message.entry_email_migrated_candidate }}" />
+                    <label>会社 / プラットフォーム<input name="company_or_platform" value="{{ message.entry_company_candidate }}" required /></label>
+                    <label>ログインID<input name="login_id" value="{{ message.entry_login_id_candidate }}" /></label>
+                    <label class="full">MyPage URL<input name="mypage_url" value="{{ message.entry_mypage_url_candidate }}" placeholder="https://mypage...." /></label>
+                    <label>連絡メール<input name="contact_email" value="{{ message.entry_contact_email_candidate }}" /></label>
+                    <label>Vault項目ID<input name="vault_item_id" value="{{ message.entry_vault_item_id_candidate }}" placeholder="kp://jobhunt/item" /></label>
+                    <label class="full">Playwright状態パス<input name="playwright_state_path" value="{{ message.entry_playwright_state_path_candidate }}" placeholder="{{ settings.playwright_auth_dir }}/site.json" /></label>
+                    <label class="full">メモ<textarea name="notes" rows="3">{{ message.entry_notes_candidate }}</textarea></label>
+                    <button type="submit">アカウント保存して完了</button>
+                  </form>
+                </div>
+              </details>
+            </article>
+            {% endfor %}
+          </div>
+          {{ pager(snapshot) }}
+          {% else %}
+          <p class="empty">昨日以降のMyPage登録候補メールはありません。</p>
+          {% endif %}
+        </article>
+
+        <aside class="panel-stack sticky-column">
+          <article class="panel compact">
+            <div class="panel-header tight">
+              <div>
+                <h2>運用ルール</h2>
+                <p>自動で完了扱いにせず、登録したかどうかだけをここで手動管理します。</p>
+              </div>
+            </div>
+            <div class="info-stack">
+              <div class="info-row">
+                <span>対象期間</span>
+                <code>{{ snapshot.entry_since_label }} 00:00 以降</code>
+              </div>
+              <div class="info-row">
+                <span>未登録</span>
+                <code>{{ snapshot.entry_filter_counts['pending'] }}件</code>
+              </div>
+              <div class="info-row">
+                <span>登録済み</span>
+                <code>{{ snapshot.entry_filter_counts['done'] }}件</code>
+              </div>
+              <div class="info-row">
+                <span>確認手順</span>
+                <code>Gmail確認 → 必要なら保存 → 登録済みに更新</code>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel compact">
+            <div class="panel-header tight">
+              <div>
+                <h2>既存一覧</h2>
+                <p>保存済みアカウントの一覧は通常のアカウントタブで確認します。</p>
+              </div>
+            </div>
+            <div class="row-inline">
+              <a class="button-link secondary" href="/?view=accounts">アカウント一覧へ</a>
+            </div>
+          </article>
+        </aside>
+      </section>
+      {% endif %}
+
+      {% if snapshot.view == 'calendar_review' %}
+      <section class="summary-grid four">
+        {% for filter in snapshot.calendar_filters %}
+        <article class="panel compact">
+          <div class="panel-header tight">
+            <div>
+              <h2>{{ filter.label }}</h2>
+              <p>{{ snapshot.calendar_filter_counts[filter.key] }}件</p>
+            </div>
+            <a class="button-link{% if snapshot.calendar_status == filter.key %} selected{% else %} secondary{% endif %}" href="/?view=calendar_review&page=1&calendar_status={{ filter.key }}">
+              表示
+            </a>
+          </div>
+        </article>
+        {% endfor %}
+      </section>
+
+      <section class="content-layout">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>カレンダー確認候補メール</h2>
+              <p>{{ snapshot.entry_since_label }} 以降に届いた 일정 후보입니다. 확정 메일이 아니면 자동 등록하지 않고 여기서 확인 후 처리합니다.</p>
+            </div>
+            <span class="chip">現在 {{ snapshot.calendar_filter_counts[snapshot.calendar_status] }}件</span>
+          </div>
+          {% if snapshot.calendar_review_messages %}
+          <div class="stack-list narrow-list">
+            {% for message in snapshot.calendar_review_messages %}
+            <article class="stack-item application-card">
+              <div class="row-between top compact-row">
+                <strong class="mail-subject">{{ message.subject or '(件名なし)' }}</strong>
+                <span class="chip mail-time">{{ message.received_at or '-' }}</span>
+              </div>
+              <div class="row-inline chips subtle-top">
+                {% if message.calendar_company_candidate %}<span class="chip muted-chip">{{ message.calendar_company_candidate }}</span>{% endif %}
+                {% if message.stage_label %}<span class="chip">{{ message.stage_label|ja_text }}</span>{% endif %}
+                <span class="chip warn-chip">{{ message.manual_calendar_status_label }}</span>
+              </div>
+              <p class="primary mail-sender">{{ message.sender or '-' }}</p>
+              <p class="mail-snippet">{{ message.snippet or '-' }}</p>
+              <p class="meta-line">候補時刻 {{ message.calendar_time_range_label }}</p>
+              <p class="meta-line">場所 {{ message.calendar_location_label }}</p>
+              <p class="meta-line">理由 {{ message.calendar_review_reason_label }}</p>
+              {% if message.manual_calendar_checked_at %}
+              <p class="meta-line">最終更新 {{ message.manual_calendar_checked_at }}</p>
+              {% endif %}
+              <div class="row-inline">
+                <a class="inline-link" href="/mail/messages/{{ message.gmail_message_id }}/open-gmail" target="_blank" rel="noreferrer">Gmailで見る</a>
+                {% if message.calendar_event_link %}
+                <a class="inline-link" href="{{ message.calendar_event_link }}" target="_blank" rel="noreferrer">カレンダーを開く</a>
+                {% endif %}
+                {% if message.meeting_url %}
+                <a class="inline-link" href="{{ message.meeting_url }}" target="_blank" rel="noreferrer">会議URLを開く</a>
+                {% endif %}
+              </div>
+              <form method="post" action="/mail/create-calendar-event" class="form-grid compact-form subtle-top">
+                <input type="hidden" name="gmail_message_id" value="{{ message.gmail_message_id }}" />
+                <input type="hidden" name="return_view" value="calendar_review" />
+                <input type="hidden" name="return_page" value="{{ snapshot.page }}" />
+                <input type="hidden" name="calendar_status" value="{{ snapshot.calendar_status }}" />
+                <label>開始<input type="datetime-local" name="start_at_input" value="{{ message.calendar_start_input }}" required /></label>
+                <label>終了<input type="datetime-local" name="end_at_input" value="{{ message.calendar_end_input }}" /></label>
+                <label class="full">場所<input name="location_input" value="{{ message.calendar_location_input }}" placeholder="온라인 / 회의실 / 주소" /></label>
+                <button type="submit">カレンダー登録</button>
+              </form>
+              <div class="row-inline">
+                <form method="post" action="/mail/create-calendar-event">
+                  <input type="hidden" name="gmail_message_id" value="{{ message.gmail_message_id }}" />
+                  <input type="hidden" name="start_at_input" value="{{ message.calendar_start_input }}" />
+                  <input type="hidden" name="end_at_input" value="{{ message.calendar_end_input }}" />
+                  <input type="hidden" name="location_input" value="{{ message.calendar_location_input }}" />
+                  <input type="hidden" name="return_view" value="calendar_review" />
+                  <input type="hidden" name="return_page" value="{{ snapshot.page }}" />
+                  <input type="hidden" name="calendar_status" value="{{ snapshot.calendar_status }}" />
+                  <button type="submit" class="secondary">現在값으로 바로 등록</button>
+                </form>
+                <form method="post" action="/mail/manual-calendar-status">
+                  <input type="hidden" name="gmail_message_id" value="{{ message.gmail_message_id }}" />
+                  <input type="hidden" name="manual_calendar_status" value="done" />
+                  <input type="hidden" name="return_view" value="calendar_review" />
+                  <input type="hidden" name="return_page" value="{{ snapshot.page }}" />
+                  <input type="hidden" name="calendar_status" value="{{ snapshot.calendar_status }}" />
+                  <button type="submit" class="{% if message.manual_calendar_status_resolved == 'done' %}secondary{% endif %}">確認済みにする</button>
+                </form>
+                <form method="post" action="/mail/manual-calendar-status">
+                  <input type="hidden" name="gmail_message_id" value="{{ message.gmail_message_id }}" />
+                  <input type="hidden" name="manual_calendar_status" value="pending" />
+                  <input type="hidden" name="return_view" value="calendar_review" />
+                  <input type="hidden" name="return_page" value="{{ snapshot.page }}" />
+                  <input type="hidden" name="calendar_status" value="{{ snapshot.calendar_status }}" />
+                  <button type="submit" class="secondary">未確認に戻す</button>
+                </form>
+              </div>
+            </article>
+            {% endfor %}
+          </div>
+          {{ pager(snapshot) }}
+          {% else %}
+          <p class="empty">確認待ちの 일정 후보는 없습니다。</p>
+          {% endif %}
+        </article>
+
+        <aside class="panel-stack sticky-column">
+          <article class="panel compact">
+            <div class="panel-header tight">
+              <div>
+                <h2>運用ルール</h2>
+                <p>확정 메일만 자동 등록하고, 나머지는 Gmail 확인 후 수동으로 끝냅니다.</p>
+              </div>
+            </div>
+            <div class="info-stack">
+              <div class="info-row">
+                <span>対象期間</span>
+                <code>{{ snapshot.entry_since_label }} 00:00 以降</code>
+              </div>
+              <div class="info-row">
+                <span>未確認</span>
+                <code>{{ snapshot.calendar_filter_counts['pending'] }}件</code>
+              </div>
+              <div class="info-row">
+                <span>確認済み</span>
+                <code>{{ snapshot.calendar_filter_counts['done'] }}件</code>
+              </div>
+              <div class="info-row">
+                <span>確認手順</span>
+                <code>Gmail確認 → Calendar処理 → 確認済みに更新</code>
+              </div>
+            </div>
+          </article>
+        </aside>
+      </section>
+      {% endif %}
+
+      {% if snapshot.view == 'mail' %}
+      <section class="summary-grid three">
+        {% for filter in snapshot.mail_filters %}
+        <article class="panel compact filter-panel{% if snapshot.mail_kind == filter.key %} selected-panel{% endif %}">
+          <a class="filter-card-link" href="/?view=mail&page=1&mail_kind={{ filter.key }}{% if snapshot.auto_refresh_seconds %}&auto_refresh={{ snapshot.auto_refresh_seconds }}{% endif %}#mail-results">
+            <div class="panel-header tight">
+              <div>
+                <h2>{{ filter.label }}</h2>
+                <p>{{ filter.count }}件</p>
+              </div>
+              <span class="chip{% if snapshot.mail_kind == filter.key %}{% else %} muted-chip{% endif %}">
+                {% if snapshot.mail_kind == filter.key %}表示中{% else %}開く{% endif %}
+              </span>
+            </div>
+            {% if filter.preview_messages %}
+            <div class="stack-list">
+              {% for message in filter.preview_messages %}
+              <div class="mini-item mail-preview-item">
+                <strong>{{ message.subject or '(件名なし)' }}</strong>
+                <p>{{ message.sender or '-' }}</p>
+                <p class="mini-meta">{{ message.received_at or '-' }}</p>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty small-empty">該当メールなし</p>
+            {% endif %}
+          </a>
+        </article>
+        {% endfor %}
+      </section>
+
+      <section class="content-layout">
+        <article class="panel" id="mail-results">
+          <div class="panel-header">
+            <div>
+              <h2>最近のGmail受信</h2>
+              <p>
+                手動更新は上のボタンを押したときだけ再読込され、自動更新はこのページを30秒または60秒ごとに再読込します。
+                実際のメール収集は上の <strong>今すぐメール同期</strong> ボタンかバックグラウンドスケジュールが担当します。
+                現在のフィルタは <strong>{{ snapshot.mail_filter_counts[snapshot.mail_kind] }}件</strong> です。
+              </p>
+            </div>
+            {% if snapshot.auto_refresh_seconds %}
+            <span class="chip">自動 {{ snapshot.auto_refresh_seconds }}秒</span>
+            {% endif %}
+          </div>
+          {% if snapshot.recent_messages %}
+          <div class="stack-list">
+            {% for message in snapshot.recent_messages %}
+            <div class="stack-item mail-item">
+              <div class="row-between top compact-row">
+                <strong class="mail-subject">{{ message.subject or '(件名なし)' }}</strong>
+                <span class="chip mail-time">{{ message.received_at or '-' }}</span>
+              </div>
+              <div class="row-inline chips subtle-top">
+                {% if message.inferred_platform %}<span class="chip muted-chip">{{ message.inferred_platform }}</span>{% endif %}
+                {% if message.inferred_company %}<span class="chip muted-chip">{{ message.inferred_company }}</span>{% endif %}
+                {% if message.inferred_stage %}<span class="chip">{{ message.inferred_stage|ja_text }}</span>{% endif %}
+                {% if message.inferred_login_id %}<span class="chip muted-chip">ID {{ message.inferred_login_id }}</span>{% endif %}
+                {% if message.linked_site_account_id %}<span class="chip">アカウント反映</span>{% endif %}
+                {% if message.linked_application_id %}<span class="chip">応募反映</span>{% endif %}
+                {% if message.mail_review_needed %}<span class="chip warn-chip">要確認</span>{% endif %}
+              </div>
+              <p class="primary mail-sender">{{ message.sender or '-' }}</p>
+              <p class="mail-snippet">{{ message.snippet or '-' }}</p>
+              <p class="meta-line">受信アカウント {{ message.account_email or '-' }}</p>
+              {% if message.mail_link_notes %}<p class="meta-line">連携メモ {{ message.mail_link_notes }}</p>{% endif %}
+              <div class="row-inline">
+                <a class="inline-link" href="/mail/messages/{{ message.gmail_message_id }}/open-gmail" target="_blank" rel="noreferrer">Gmailで見る</a>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {{ pager(snapshot) }}
+          {% else %}
+          <p class="empty">保存されたGmailメッセージはまだありません。</p>
+          {% endif %}
+        </article>
+
+        <aside class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>同期状態</h2>
+              <p>メールアカウントごとの最近の同期時刻を確認します。</p>
+            </div>
+          </div>
+          {% if snapshot.mail_accounts %}
+          <div class="stack-list">
+            {% for account in snapshot.mail_accounts %}
+            <div class="stack-item">
+              <div class="row-between top">
+                <strong>{{ account.email }}</strong>
+                {% if account.is_authoritative %}<span class="chip">基準メール</span>{% endif %}
+              </div>
+              <p>history ID {{ account.last_history_id or 'まだなし' }}</p>
+              <p>フル {{ account.last_full_sync_at or '-' }}</p>
+              <p>差分 {{ account.last_partial_sync_at or '-' }}</p>
+              {% if account.last_error %}<p class="warn">{{ account.last_error }}</p>{% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="empty">メールアカウント状態はありません。</p>
+          {% endif %}
+        </aside>
+      </section>
+      {% endif %}
+
+      {% if snapshot.view == 'jobs' %}
+      <details class="disclosure-card">
+        <summary class="disclosure-summary">
+          <div class="disclosure-copy">
+            <strong>求人ツール</strong>
+            <p>手動リンク保存と収集基準は必要なときだけ開いて確認します。</p>
+          </div>
+          <span class="disclosure-toggle">開く</span>
+        </summary>
+        <div class="disclosure-body compact-body">
+          <div class="tool-grid">
+            <div class="panel compact">
+              <div class="panel-header tight">
+                <div>
+                  <h2>求人リンク取り込み</h2>
+                  <p>URLだけ入力してすぐ保存します。</p>
+                </div>
+              </div>
+              <form method="post" action="/jobs/import-url" class="form-grid">
+                <label class="full">求人URL<input type="url" name="job_url" placeholder="https://..." required /></label>
+                <label>会社名<input name="company_name" placeholder="空欄ならページから抽出" /></label>
+                <label>出典サイト<input name="source_name" placeholder="ONE CAREER / マイナビ / 企業採用ページ" /></label>
+                <button type="submit">求人を保存</button>
+              </form>
+            </div>
+
+            <div class="panel compact">
+              <div class="panel-header tight">
+                <div>
+                  <h2>収集基準</h2>
+                  <p>運用メモと収集ルールだけを短く確認します。</p>
+                </div>
+              </div>
+              <div class="info-stack">
+                <div class="info-row">
+                  <span>すぐできること</span>
+                  <code>公開求人URL / 静的ページ / 詳細表示 / ローカルLLM再整理</code>
+                </div>
+                <div class="info-row">
+                  <span>ログイン収集</span>
+                  <code>Playwrightセッション再利用 / ONE CAREER / 外資就活</code>
+                </div>
+                <div class="info-row">
+                  <span>一覧表示</span>
+                  <code>会社名 / 選考 / 職種中心、詳細は求人詳細で確認</code>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <section class="section-banner slim">
+        <div>
+          <h2>{{ snapshot.job_grad_year }}卒 基準求人</h2>
+          <p>インターン、本選考、説明会、プレエントリー、その他募集を同じ基準で分けて見て、必要な結果だけすぐ確認します。</p>
+        </div>
+        <div class="toolbar">
+          {% for filter in snapshot.job_filters %}
+          <a
+            class="button-link{% if snapshot.job_kind == filter.key %} selected{% else %} secondary{% endif %}"
+            href="/?view=jobs&job_kind={{ filter.key }}&grad_year={{ snapshot.job_grad_year }}#job-results"
+          >
+            {{ filter.label }} {{ snapshot.job_filter_counts[filter.key] }}
+          </a>
+          {% endfor %}
+          <form method="post" action="/jobs/classify-review-needed">
+            <input type="hidden" name="grad_year" value="{{ snapshot.job_grad_year }}" />
+            <input type="hidden" name="limit" value="10" />
+            <button type="submit" class="secondary">要確認 10件を分類</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="panel" id="job-results">
+        <div class="panel-header">
+          <div>
+            <h2>
+              {% if snapshot.job_kind == 'latest' %}全体求人{% endif %}
+              {% if snapshot.job_kind == 'internship' %}インターン求人{% endif %}
+              {% if snapshot.job_kind == 'main_selection' %}本選考求人{% endif %}
+              {% if snapshot.job_kind == 'briefing' %}説明会{% endif %}
+              {% if snapshot.job_kind == 'pre_entry' %}プレエントリー{% endif %}
+              {% if snapshot.job_kind == 'unknown' %}その他募集{% endif %}
+              {% if snapshot.job_kind == 'review_needed' %}要確認求人{% endif %}
+            </h2>
+            <p>{{ snapshot.job_grad_year }}卒基準で {{ snapshot.job_filter_counts[snapshot.job_kind] }}件のうち現在ページ分のみ表示します。</p>
+          </div>
+        </div>
+        {% if snapshot.recent_posts %}
+        <div class="stack-list">
+          {% for post in snapshot.recent_posts %}
+          <div class="stack-item">
+            <div class="row-between top">
+              <strong>{{ post.company_name or '未確認' }}</strong>
+              <span class="chip">{{ post.graduate_year_resolved or '-' }}卒</span>
+            </div>
+            <p class="primary">{{ post.title }}</p>
+            <div class="row-inline chips">
+              <span class="chip muted-chip">{{ post.track_display_label }}</span>
+              <span class="chip muted-chip">{{ post.role_fit_label or '要確認' }}</span>
+              {% if post.review_needed %}<span class="chip warn-chip">要確認</span>{% endif %}
+            </div>
+            <div class="row-inline">
+              <a class="inline-link" href="/jobs/{{ post.id }}">詳細を見る</a>
+              {% if post.url %}
+              <a class="inline-link" href="{{ post.url }}" target="_blank" rel="noreferrer">原文を開く</a>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {{ pager(snapshot) }}
+        {% else %}
+        <p class="empty">保存された求人はありません。</p>
+        {% endif %}
+      </section>
+
+      {% endif %}
+
+      {% if snapshot.view == 'applications' %}
+      <section class="content-layout">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>応募一覧</h2>
+              <p>次のアクション、MyPage、Gmail、最近の変化をカードからすぐ確認できます。</p>
+            </div>
+          </div>
+          {% if snapshot.applications %}
+          <div class="stack-list narrow-list">
+            {% for application in snapshot.applications %}
+            <article class="stack-item application-card">
+              <div class="row-between top">
+                <strong>{{ application.company_name or '未確認' }}</strong>
+                <div class="row-inline chips">
+                  <span class="chip">{{ application.current_stage|ja_text }}</span>
+                  <span class="chip muted-chip">優先 {{ application.my_priority }}</span>
+                  <span class="chip muted-chip">締切 {{ application.deadline or '-' }}</span>
+                </div>
+              </div>
+              <p class="primary">{{ application.next_action or '次のアクションなし' }}</p>
+              <div class="row-inline compact-meta">
+                <span>経路 {{ application.route or '-' }}</span>
+                <span>連絡 {{ application.contact_email or '-' }}</span>
+                <span>ID {{ application.account_login_id or '-' }}</span>
+              </div>
+              <div class="row-inline">
+                {% if application.mypage_url %}
+                <a class="inline-link" href="{{ application.mypage_url }}" target="_blank" rel="noreferrer">MyPageを開く</a>
+                {% endif %}
+                {% if application.latest_mail.gmail_message_id %}
+                <a class="inline-link" href="/mail/messages/{{ application.latest_mail.gmail_message_id }}/open-gmail" target="_blank" rel="noreferrer">応募メールを見る</a>
+                {% elif application.account_mail_message_id %}
+                <a class="inline-link" href="/mail/messages/{{ application.account_mail_message_id }}/open-gmail" target="_blank" rel="noreferrer">アカウントメールを見る</a>
+                {% endif %}
+              </div>
+              {% if application.latest_event %}
+              <div class="mini-note">
+                <strong>最近の変化</strong>
+                <p>{{ application.latest_event.event_at or '-' }} · {{ application.latest_event.event_type|ja_text or '-' }}</p>
+                {% if application.latest_event.calendar_start_at %}
+                <p>日程 {{ application.latest_event.calendar_start_at }}{% if application.latest_event.calendar_end_at %} ~ {{ application.latest_event.calendar_end_at }}{% endif %}</p>
+                {% endif %}
+                {% if application.latest_event.calendar_location %}
+                <p>{{ application.latest_event.calendar_location }}</p>
+                {% endif %}
+                {% if application.latest_event.details %}
+                <p>{{ application.latest_event.details }}</p>
+                {% endif %}
+                {% if application.latest_event.calendar_event_link %}
+                <a class="inline-link" href="{{ application.latest_event.calendar_event_link }}" target="_blank" rel="noreferrer">カレンダーを開く</a>
+                {% endif %}
+              </div>
+              {% endif %}
+              {% if application.notes %}
+              <div class="mini-note">
+                <strong>メモ</strong>
+                <p>{{ application.notes }}</p>
+              </div>
+              {% endif %}
+
+              <details class="disclosure-card inline-disclosure">
+                <summary class="disclosure-summary">
+                  <div class="disclosure-copy">
+                    <strong>管理</strong>
+                    <p>更新とイベント追加だけを開いて処理します。</p>
+                  </div>
+                  <span class="disclosure-toggle">開く</span>
+                </summary>
+                <div class="disclosure-body compact-body">
+                  <form method="post" action="/applications/{{ application.id }}/update" class="form-grid compact-form">
+                    <input type="hidden" name="return_view" value="applications" />
+                    <label>現在ステージ<input name="current_stage" value="{{ application.current_stage|ja_text }}" /></label>
+                    <label>次のアクション<input name="next_action" value="{{ application.next_action or '' }}" /></label>
+                    <label>締切<input type="date" name="deadline" value="{{ application.deadline or '' }}" /></label>
+                    <label>優先度<input type="number" name="my_priority" min="1" max="5" value="{{ application.my_priority }}" /></label>
+                    <label class="full">メモ<input name="notes" value="{{ application.notes or '' }}" /></label>
+                    <button type="submit">応募情報を更新</button>
+                  </form>
+
+                  <form method="post" action="/applications/{{ application.id }}/events" class="form-grid compact-form event-form">
+                    <input type="hidden" name="return_view" value="applications" />
+                    <label>イベント名<input name="event_type" placeholder="一次面接 / 通過 / 課題依頼" /></label>
+                    <label class="full">詳細内容<input name="details" placeholder="日程、場所、準備事項" /></label>
+                    <button type="submit" class="secondary">イベント追加</button>
+                  </form>
+                </div>
+              </details>
+            </article>
+            {% endfor %}
+          </div>
+          {{ pager(snapshot) }}
+          {% else %}
+          <p class="empty">記録された応募履歴はまだありません。</p>
+          {% endif %}
+        </article>
+
+        <aside class="panel-stack sticky-column">
+          <details class="disclosure-card">
+            <summary class="disclosure-summary">
+              <div class="disclosure-copy">
+                <strong>応募状況を追加</strong>
+                <p>新しい応募履歴は必要なときだけ開いて記録します。</p>
+              </div>
+              <span class="disclosure-toggle">開く</span>
+            </summary>
+            <div class="disclosure-body compact-body">
+              <form method="post" action="/applications" class="form-grid">
+                <input type="hidden" name="return_view" value="applications" />
+                <label>会社名<input name="company_name" required /></label>
+                <label>応募経路<input name="route" placeholder="ONE CAREER / 企業直接応募" /></label>
+                <label>連絡メール<input name="contact_email" value="me@example.com" /></label>
+                <label>現在ステージ<input name="current_stage" value="応募完了" /></label>
+                <label>次のアクション<input name="next_action" /></label>
+                <label>締切日<input type="date" name="deadline" /></label>
+                <label>優先度<input type="number" name="my_priority" min="1" max="5" value="3" /></label>
+                <label class="full">メモ<textarea name="notes" rows="3"></textarea></label>
+                <button type="submit">応募情報を保存</button>
+              </form>
+            </div>
+          </details>
+
+          <article class="panel compact">
+            <div class="panel-header tight">
+              <div>
+                <h2>最近の選考イベント</h2>
+                <p>最近の変化だけを短く確認します。</p>
+              </div>
+            </div>
+            {% if snapshot.recent_events %}
+            <div class="stack-list scroll-list">
+              {% for event in snapshot.recent_events %}
+              <div class="stack-item">
+                <strong>{{ event.company_name or '未確認' }} · {{ event.event_type|ja_text }}</strong>
+                <p>{{ event.event_at }}</p>
+                {% if event.calendar_start_at %}
+                <p>日程 {{ event.calendar_start_at }}{% if event.calendar_end_at %} ~ {{ event.calendar_end_at }}{% endif %}</p>
+                {% endif %}
+                {% if event.calendar_location %}
+                <p>{{ event.calendar_location }}</p>
+                {% endif %}
+                <p>{{ event.details or '-' }}</p>
+                {% if event.message_id %}
+                  <a class="inline-link" href="/mail/messages/{{ event.message_id }}/open-gmail" target="_blank" rel="noreferrer">Gmailで見る</a>
+                {% endif %}
+                {% if event.calendar_event_link %}
+                  <a class="inline-link" href="{{ event.calendar_event_link }}" target="_blank" rel="noreferrer">カレンダーを開く</a>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty">最近の選考イベントはありません。</p>
+            {% endif %}
+          </article>
+        </aside>
+      </section>
+      {% endif %}
+
+      {% if snapshot.view == 'materials' %}
+      <section class="content-layout">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>個人資料一覧</h2>
+              <p>ガクチカ、自己PR、強み・弱み、ポートフォリオの下書きを保存し、必要なときだけ開いて整えます。</p>
+            </div>
+          </div>
+          {% if snapshot.personal_materials %}
+          <div class="stack-list narrow-list">
+            {% for material in snapshot.personal_materials %}
+            <details class="disclosure-card">
+              <summary class="disclosure-summary">
+                <div class="disclosure-copy">
+                  <strong>{{ material.title }}</strong>
+                  <p>{{ material.material_type_label }}{% if material.target_role %} / {{ material.target_role }}{% endif %} / 更新 {{ material.updated_at[:10] if material.updated_at else '-' }}</p>
+                </div>
+                <span class="disclosure-toggle">開く</span>
+              </summary>
+              <div class="disclosure-body">
+                <div class="row-inline">
+                  <form method="post" action="/materials/{{ material.id }}/summarize-local" class="inline-form">
+                    <input type="hidden" name="return_view" value="materials" />
+                    <button type="submit" class="secondary small-button">MLX整理</button>
+                  </form>
+                </div>
+                <div class="detail-grid">
+                  <p>資料タイプ {{ material.material_type_label }}</p>
+                  <p>志望職種 {{ material.target_role or '-' }}</p>
+                </div>
+                <div class="note-section">
+                  <strong>要点要約</strong>
+                  <p class="note-block">{{ material.summary_note or '要約なし' }}</p>
+                </div>
+                <div class="note-section">
+                  <strong>推敲済みドラフト</strong>
+                  <p class="note-block">{{ material.refined_draft or '推敲済みドラフトなし' }}</p>
+                </div>
+                {% if material.detail and material.detail.llm %}
+                <div class="detail-grid">
+                  <div class="note-section">
+                    <strong>強みポイント</strong>
+                    <p class="note-block">{{ ('- ' ~ (material.detail.llm.key_points | join('\n- '))) if material.detail.llm.key_points else '強みポイントなし' }}</p>
+                  </div>
+                  <div class="note-section">
+                    <strong>改善ポイント</strong>
+                    <p class="note-block">{{ ('- ' ~ (material.detail.llm.concern_points | join('\n- '))) if material.detail.llm.concern_points else '改善ポイントなし' }}</p>
+                  </div>
+                </div>
+                <div class="note-section">
+                  <strong>面接ポイント</strong>
+                  <p class="note-block">{{ ('- ' ~ (material.detail.llm.interview_angles | join('\n- '))) if material.detail.llm.interview_angles else '面接ポイントなし' }}</p>
+                </div>
+                {% endif %}
+                <div class="note-section">
+                  <strong>メモ</strong>
+                  <p class="note-block">{{ material.memo or 'メモなし' }}</p>
+                </div>
+                {% if material.template and material.template.prompt_questions %}
+                <div class="note-section">
+                  <strong>作成補助質問</strong>
+                  <p class="note-block">- {{ material.template.prompt_questions | join('\n- ') }}</p>
+                </div>
+                {% endif %}
+                {% if material.prompt_rule and material.prompt_rule.review_checks %}
+                <div class="note-section">
+                  <strong>確認チェック</strong>
+                  <p class="note-block">- {{ material.prompt_rule.review_checks | join('\n- ') }}</p>
+                </div>
+                {% endif %}
+
+                <details class="disclosure-card inline-disclosure">
+                  <summary class="disclosure-summary">
+                    <div class="disclosure-copy">
+                      <strong>個人資料を更新</strong>
+                      <p>原文の再入力と詳細修正は開いて処理します。</p>
+                    </div>
+                    <span class="disclosure-toggle">開く</span>
+                  </summary>
+                  <div class="disclosure-body compact-body">
+                    <form method="post" action="/materials/{{ material.id }}/update" class="form-grid compact-form">
+                      <input type="hidden" name="return_view" value="materials" />
+                      <label>資料タイプ
+                        <select name="material_type">
+                          {% for option in snapshot.material_types %}
+                          <option value="{{ option.key }}"{% if option.key == material.material_type %} selected{% endif %}>{{ option.label }}</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                      <label>タイトル<input name="title" value="{{ material.title }}" /></label>
+                      <label class="full">志望職種<input name="target_role" value="{{ material.target_role or '' }}" placeholder="例: ソリューションエンジニア / AIエンジニア" /></label>
+                      <label class="full">新しい原文を貼り付け<textarea name="raw_text" rows="5" placeholder="原文を貼り直すと blob に保存され、必要なときに MLX 整理を再実行できます。"></textarea></label>
+                      <label class="full">要点要約<textarea name="summary_note" rows="3">{{ material.summary_note or '' }}</textarea></label>
+                      <label class="full">推敲済みドラフト<textarea name="refined_draft" rows="6">{{ material.refined_draft or '' }}</textarea></label>
+                      <label class="full">メモ<textarea name="memo" rows="3">{{ material.memo or '' }}</textarea></label>
+                      <button type="submit">個人資料を更新</button>
+                    </form>
+                  </div>
+                </details>
+
+                <details class="disclosure-card inline-disclosure">
+                  <summary class="disclosure-summary">
+                    <div class="disclosure-copy">
+                      <strong>会社・職種別バージョン複製</strong>
+                      <p>現在の下書きをもとに応募先ごとのバージョンをすばやく作成します。</p>
+                    </div>
+                    <span class="disclosure-toggle">開く</span>
+                  </summary>
+                  <div class="disclosure-body compact-body">
+                    <form method="post" action="/materials/{{ material.id }}/duplicate" class="form-grid compact-form">
+                      <input type="hidden" name="return_view" value="materials" />
+                      <label>会社名<input name="company_name" placeholder="例: アクセンチュア / メルカリ" /></label>
+                      <label>志望職種<input name="target_role" value="{{ material.target_role or '' }}" placeholder="例: ソリューションエンジニア" /></label>
+                      <button type="submit" class="secondary">バージョン複製</button>
+                    </form>
+                  </div>
+                </details>
+              </div>
+            </details>
+            {% endfor %}
+          </div>
+          {{ pager(snapshot) }}
+          {% else %}
+          <p class="empty">保存された個人資料はまだありません。</p>
+          {% endif %}
+        </article>
+
+        <aside class="panel-stack sticky-column">
+          <details class="disclosure-card">
+            <summary class="disclosure-summary">
+              <div class="disclosure-copy">
+                <strong>個人資料を追加</strong>
+                <p>下書きは右側から入力し、一覧は左側で先に確認します。</p>
+              </div>
+              <span class="disclosure-toggle">開く</span>
+            </summary>
+            <div class="disclosure-body compact-body">
+              <form method="post" action="/materials" class="form-grid">
+                <input type="hidden" name="return_view" value="materials" />
+                <label>資料タイプ
+                  <select name="material_type">
+                    {% for option in snapshot.material_types %}
+                    <option value="{{ option.key }}">{{ option.label }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <label>タイトル<input name="title" placeholder="例: データ分析ガクチカ / 自己PR下書き" /></label>
+                <label class="full">志望職種<input name="target_role" placeholder="例: AIエンジニア / ソリューションエンジニア" /></label>
+                <label class="full">原文下書き<textarea name="raw_text" rows="12" placeholder="ガクチカ、自己PR、強み・弱み、ポートフォリオ説明などの原文をそのまま貼り付けてください。保存後に MLX 整理を押すと、要点要約、改善ポイント、面接ポイント、推敲済みドラフトを自動生成します。" required></textarea></label>
+                <label class="full">メモ<textarea name="memo" rows="3"></textarea></label>
+                <button type="submit">個人資料を保存</button>
+              </form>
+            </div>
+          </details>
+
+          <article class="panel compact">
+            <div class="panel-header tight">
+              <div>
+                <h2>利用基準</h2>
+                <p>ローカル運用基準だけを短く確認します。</p>
+              </div>
+            </div>
+            <div class="info-stack">
+              <div class="info-row">
+                <span>推奨入力</span>
+                <code>原文下書き / 志望職種 / メモ</code>
+              </div>
+              <div class="info-row">
+                <span>MLX結果</span>
+                <code>要点要約 / 強み / 改善 / 面接ポイント / 推敲済みドラフト</code>
+              </div>
+              <div class="info-row">
+                <span>ローカルモデル</span>
+                <code>{{ settings.local_llm_backend }} / {{ settings.local_llm_model }}</code>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel compact">
+            <div class="panel-header tight">
+              <div>
+                <h2>資料別テンプレート</h2>
+                <p>良い回答構成だけをローカルルールとして整理しています。</p>
+              </div>
+            </div>
+            <div class="stack-list scroll-list">
+              {% for key, template in snapshot.material_templates.items() %}
+              <div class="stack-item">
+                <strong>{{ template.label or key }}</strong>
+                {% if template.goal %}<p>{{ template.goal }}</p>{% endif %}
+                {% if template.structure %}
+                <p><strong>推奨構成</strong></p>
+                <p class="note-block">- {{ template.structure | join('\n- ') }}</p>
+                {% endif %}
+                {% if template.prompt_questions %}
+                <p><strong>補助質問</strong></p>
+                <p class="note-block">- {{ template.prompt_questions | join('\n- ') }}</p>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </article>
+
+          <article class="panel compact">
+            <div class="panel-header tight">
+              <div>
+                <h2>作成ルール</h2>
+                <p>LLM が参照する補完ルールをタイプ別に分けてあります。</p>
+              </div>
+            </div>
+            <div class="stack-list scroll-list">
+              {% for key, rule in snapshot.material_prompt_rules.items() %}
+              <div class="stack-item">
+                <strong>{{ snapshot.material_templates.get(key).label if snapshot.material_templates.get(key) else key }}</strong>
+                {% if rule.rewrite_goal %}<p>{{ rule.rewrite_goal }}</p>{% endif %}
+                {% if rule.must_include %}
+                <p><strong>必ず含めること</strong></p>
+                <p class="note-block">- {{ rule.must_include | join('\n- ') }}</p>
+                {% endif %}
+                {% if rule.avoid %}
+                <p><strong>避ける点</strong></p>
+                <p class="note-block">- {{ rule.avoid | join('\n- ') }}</p>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </article>
+        </aside>
+      </section>
+      {% endif %}
+
+      {% if snapshot.view == 'notes' %}
+      <section class="content-layout">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>体験記ノート一覧</h2>
+              <p>ノートを先に見て、追加・修正は必要なときだけ開いて処理します。</p>
+            </div>
+          </div>
+          {% if snapshot.interview_notes %}
+          <div class="stack-list narrow-list">
+            {% for note in snapshot.interview_notes %}
+            <details class="disclosure-card">
+              <summary class="disclosure-summary">
+                <div class="disclosure-copy">
+                  <strong>{{ note.company_name or '未確認' }}</strong>
+                  <p>{{ note.source_name|ja_text }} / 確認 {{ note.checked_at or '-' }}</p>
+                </div>
+                <span class="disclosure-toggle">開く</span>
+              </summary>
+              <div class="disclosure-body">
+                <div class="detail-grid">
+                  <p>選考段階 {{ note.screening_stage|ja_text or '-' }}</p>
+                  <p>質問タグ {{ note.question_tags or '-' }}</p>
+                </div>
+                <div class="row-inline">
+                  <a class="inline-link" href="/interview-notes/{{ note.id }}">詳細を見る</a>
+                  <a class="inline-link" href="/interview-notes/{{ note.id }}#summary-detail">要点要約全体を見る</a>
+                  <form method="post" action="/interview-notes/{{ note.id }}/summarize-local" class="inline-form">
+                    <input type="hidden" name="return_view" value="notes" />
+                    <button type="submit" class="secondary small-button">MLX再整理</button>
+                  </form>
+                </div>
+                {% if note.source_url %}
+                <a class="inline-link" href="{{ note.source_url }}" target="_blank" rel="noreferrer">出典 開く</a>
+                {% endif %}
+                <div class="note-section">
+                  <strong>要点要約</strong>
+                  <p class="note-block">{{ note.summary_note or '要約なし' }}</p>
+                </div>
+                <div class="note-section">
+                  <strong>頻出質問</strong>
+                  <p class="note-block">{{ note.question_examples or '頻出質問なし' }}</p>
+                </div>
+                <div class="note-section">
+                  <strong>準備ポイント</strong>
+                  <p class="note-block">{{ note.prep_points or '準備ポイントなし' }}</p>
+                </div>
+                <div class="note-section">
+                  <strong>メモ</strong>
+                  <p class="note-block">{{ note.memo or 'メモなし' }}</p>
+                </div>
+
+                <details class="disclosure-card inline-disclosure">
+                  <summary class="disclosure-summary">
+                    <div class="disclosure-copy">
+                      <strong>体験記ノートを更新</strong>
+                      <p>原文の再入力と詳細修正は開いて処理します。</p>
+                    </div>
+                    <span class="disclosure-toggle">開く</span>
+                  </summary>
+                  <div class="disclosure-body compact-body">
+                    <form method="post" action="/interview-notes/{{ note.id }}/update" class="form-grid compact-form">
+                      <input type="hidden" name="return_view" value="notes" />
+                      <label>会社名<input name="company_name" value="{{ note.company_name or '' }}" /></label>
+                      <label>出典サイト<input name="source_name" value="{{ note.source_name|ja_text }}" /></label>
+                      <label>選考段階<input name="screening_stage" value="{{ note.screening_stage|ja_text or '' }}" /></label>
+                      <label class="full">出典 URL<input name="source_url" value="{{ note.source_url or '' }}" /></label>
+                      <label>確認日<input type="date" name="checked_at" value="{{ note.checked_at or '' }}" /></label>
+                      <label class="full">まとめて貼り付け入力<textarea name="raw_text" rows="5" placeholder="新しい原文を貼り付けると、会社名、出典、選考段階、質問関連フィールドが再度自動で分離されます。"></textarea></label>
+                      <label class="full">質問タグ<input name="question_tags" value="{{ note.question_tags or '' }}" /></label>
+                      <label class="full">要点要約<textarea name="summary_note" rows="3">{{ note.summary_note or '' }}</textarea></label>
+                      <label class="full">頻出質問<textarea name="question_examples" rows="3">{{ note.question_examples or '' }}</textarea></label>
+                      <label class="full">準備ポイント<textarea name="prep_points" rows="3">{{ note.prep_points or '' }}</textarea></label>
+                      <label class="full">メモ<textarea name="memo" rows="3">{{ note.memo or '' }}</textarea></label>
+                      <button type="submit">体験記ノートを更新</button>
+                    </form>
+                  </div>
+                </details>
+              </div>
+            </details>
+            {% endfor %}
+          </div>
+          {{ pager(snapshot) }}
+          {% else %}
+          <p class="empty">保存された体験記ノートはまだありません。</p>
+          {% endif %}
+        </article>
+
+        <aside class="panel-stack sticky-column">
+          <details class="disclosure-card">
+            <summary class="disclosure-summary">
+              <div class="disclosure-copy">
+                <strong>体験記ノートを追加</strong>
+                <p>原文貼り付け入力は必要なときだけ開きます。</p>
+              </div>
+              <span class="disclosure-toggle">開く</span>
+            </summary>
+            <div class="disclosure-body compact-body">
+              <form method="post" action="/interview-notes" class="form-grid">
+                <input type="hidden" name="return_view" value="notes" />
+                <label class="full">まとめて貼り付け入力<textarea name="raw_text" rows="14" placeholder="会社名: メルカリ&#10;出典: 就活会議&#10;選考段階: 1次面接&#10;URL: https://syukatsu-kaigi.jp/...&#10;&#10;Q. ...&#10;A. ...&#10;&#10;Q. ...&#10;A. ...&#10;&#10;このようにひとかたまりで貼り付けると、内部で会社名、出典、選考段階、質問タグ、要点要約、質問、準備ポイントを自動抽出します。原文は local blob store にのみ保存し、外部送信は行いません。" required>{{ note_prefill_raw }}</textarea></label>
+                <button type="submit">体験記ノートを保存</button>
+              </form>
+            </div>
+          </details>
+
+          <article class="panel compact">
+            <div class="panel-header tight">
+              <div>
+                <h2>利用基準</h2>
+                <p>重要な基準だけを短く確認します。</p>
+              </div>
+            </div>
+            <div class="info-stack">
+              <div class="info-row">
+                <span>保存推奨</span>
+                <code>出典 URL / 質問タグ / 要点要約 / 準備ポイント</code>
+              </div>
+              <div class="info-row">
+                <span>LLM対象外</span>
+                <code>パスワード / トークン / セッションクッキー / 2FAコード</code>
+              </div>
+              <div class="info-row">
+                <span>ローカルモデル</span>
+                <code>{{ settings.local_llm_backend }} / {{ settings.local_llm_model }}</code>
+              </div>
+            </div>
+          </article>
+        </aside>
+      </section>
+      {% endif %}
+
+      {% if snapshot.view == 'accounts' %}
+      <section class="content-layout">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>サイトアカウント一覧</h2>
+              <p>アカウント一覧を先に見て、追加入力は右側で必要なときだけ開きます。</p>
+            </div>
+          </div>
+          {% if snapshot.site_accounts %}
+          <div class="stack-list narrow-list">
+            {% for account in snapshot.site_accounts %}
+            <details class="disclosure-card">
+              <summary class="disclosure-summary">
+                <div class="disclosure-copy">
+                  <strong>{{ account.company_or_platform }}</strong>
+                  <p>ログインID <code>{{ account.login_id or '未登録' }}</code></p>
+                  {% if account.mypage_url or account.last_mail_message_id %}
+                  <p>
+                    {% if account.mypage_url %}
+                    <a class="inline-link" href="{{ account.mypage_url }}" target="_blank" rel="noreferrer">MyPage 開く</a>
+                    {% endif %}
+                    {% if account.last_mail_message_id %}
+                    {% if account.mypage_url %} / {% endif %}
+                    <a class="inline-link" href="/mail/messages/{{ account.last_mail_message_id }}/open-gmail" target="_blank" rel="noreferrer">Gmailで見る</a>
+                    {% endif %}
+                  </p>
+                  {% endif %}
+                </div>
+                <span class="disclosure-toggle">開く</span>
+              </summary>
+              <div class="disclosure-body">
+                <div class="detail-grid">
+                  <p>マイページ {% if account.mypage_url %}<a class="inline-link" href="{{ account.mypage_url }}" target="_blank" rel="noreferrer">すぐ開く</a>{% else %}-{% endif %}</p>
+                  <p>連絡メール {{ account.contact_email or '-' }}</p>
+                  <p>メール状態 {% if account.email_migrated %}移管完了{% else %}未移管{% endif %}</p>
+                  <p>Vault {{ account.vault_item_id or '-' }}</p>
+                  <p>セッション確認 {{ account.state_last_verified_at or '-' }}</p>
+                </div>
+                {% if account.last_mail_message_id %}
+                <div class="row-inline">
+                  <a class="inline-link" href="/mail/messages/{{ account.last_mail_message_id }}/open-gmail" target="_blank" rel="noreferrer">
+                    Gmailで見る{% if account.last_mail_subject %} · {{ account.last_mail_subject }}{% endif %}
+                  </a>
+                </div>
+                {% endif %}
+                <p>{{ account.playwright_state_path or '状態ファイル未登録' }}</p>
+                {% if account.notes %}<p>{{ account.notes }}</p>{% endif %}
+              </div>
+            </details>
+            {% endfor %}
+          </div>
+          {{ pager(snapshot) }}
+          {% else %}
+          <p class="empty">記録されたサイトアカウントはありません。</p>
+          {% endif %}
+        </article>
+
+        <aside class="panel-stack sticky-column">
+          <details class="disclosure-card">
+            <summary class="disclosure-summary">
+              <div class="disclosure-copy">
+                <strong>サイトアカウント追加</strong>
+                <p>個別入力は必要なときだけ開きます。</p>
+              </div>
+              <span class="disclosure-toggle">開く</span>
+            </summary>
+            <div class="disclosure-body compact-body">
+              <form method="post" action="/site-accounts" class="form-grid">
+                <input type="hidden" name="return_view" value="accounts" />
+                <input type="hidden" name="return_page" value="{{ snapshot.page }}" />
+                <label>会社 / プラットフォーム<input name="company_or_platform" required /></label>
+                <label>ログインID<input name="login_id" /></label>
+                <label class="full">マイページ URL<input name="mypage_url" placeholder="https://mypage...." /></label>
+                <label>連絡メール<input name="contact_email" value="me@example.com" /></label>
+                <label>Vault項目ID<input name="vault_item_id" placeholder="kp://jobhunt/item" /></label>
+                <label class="full">Playwright状態パス<input name="playwright_state_path" placeholder="{{ settings.playwright_auth_dir }}/site.json" /></label>
+                <label>メール移管状況
+                  <select name="email_migrated">
+                    <option value="yes">完了</option>
+                    <option value="no" selected>未完了</option>
+                  </select>
+                </label>
+                <label class="full">メモ<textarea name="notes" rows="3"></textarea></label>
+                <button type="submit">アカウント情報を保存</button>
+              </form>
+            </div>
+          </details>
+
+          <details class="disclosure-card">
+            <summary class="disclosure-summary">
+              <div class="disclosure-copy">
+                <strong>一括入力</strong>
+                <p>会社名とログインIDだけをまとめて入力します。</p>
+              </div>
+              <span class="disclosure-toggle">開く</span>
+            </summary>
+            <div class="disclosure-body compact-body">
+              <form method="post" action="/site-accounts/import" class="form-grid">
+                <input type="hidden" name="return_view" value="accounts" />
+                <input type="hidden" name="return_page" value="{{ snapshot.page }}" />
+                <label class="full">連絡メール<input name="contact_email" value="me@example.com" /></label>
+                <label class="full">
+                  アカウント一覧
+                  <textarea name="raw_text" rows="10" placeholder="アクセンチュア: w7y1384750
+デロイトサイバー s9w1027127
+マネーフォワード: MF00059750"></textarea>
+                </label>
+                <button type="submit">一括登録</button>
+              </form>
+              <div class="info-stack subtle-top">
+                <div class="info-row">
+                  <span>保存</span>
+                  <code>会社名 / ログインID / 連絡メール</code>
+                </div>
+                <div class="info-row">
+                  <span>保存しない</span>
+                  <code>パスワード / 2FAコード</code>
+                </div>
+                <div class="info-row">
+                  <span>パスワード保管</span>
+                  <code>KeePassXC または別の vault</code>
+                </div>
+              </div>
+            </div>
+          </details>
+        </aside>
+      </section>
+      {% endif %}
+
+      {% if snapshot.view == 'sources' %}
+      <section class="summary-grid four">
+        {% for card in snapshot.source_status_cards %}
+        <article class="panel compact">
+          <div class="panel-header tight">
+            <div>
+              <h2>{{ card.title }}</h2>
+              <p>{{ card.count }}件</p>
+            </div>
+          </div>
+          <p class="mini-meta">{{ card.description }}</p>
+        </article>
+        {% endfor %}
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>求人ソースレジストリ</h2>
+            <p>会社名、検索URL、パーサー状態を一緒に確認し、運用中ソースの健全性を見ます。</p>
+          </div>
+        </div>
+        {% if snapshot.sources %}
+        <div class="stack-list narrow-list">
+          {% for source in snapshot.sources %}
+          <div class="stack-item source-item">
+            <strong>{{ source.company_name or source.source_name }}</strong>
+            <div class="row-inline chips subtle-top">
+              <span class="chip muted-chip">{{ source.parser_label }}</span>
+              <span class="chip{% if source.status_key == 'error' %} warn-chip{% endif %}">{{ source.status_label }}</span>
+              {% if source.requires_login %}<span class="chip">ログイン必要</span>{% endif %}
+            </div>
+            <a class="inline-link" href="{{ source.seed_url }}" target="_blank" rel="noreferrer">{{ source.seed_url }}</a>
+            <p class="meta-line">最終確認 {{ source.last_checked_at or 'まだなし' }}</p>
+            {% if source.last_error %}<p class="warn">{{ source.last_error }}</p>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {{ pager(snapshot) }}
+        {% else %}
+        <p class="empty">登録された求人ソースはありません。</p>
+        {% endif %}
+      </section>
+      {% endif %}
+    </main>
+  </body>
+</html>

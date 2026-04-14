@@ -1,0 +1,2 @@
+"""Forme JobHub application package."""
+

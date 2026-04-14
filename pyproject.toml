@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forme-jobhub"
+version = "0.1.0"
+description = "Local-first Gmail and job application hub"
+requires-python = ">=3.11"
+dependencies = [
+  "beautifulsoup4>=4.12",
+  "fastapi>=0.115",
+  "google-api-python-client>=2.166",
+  "google-auth-httplib2>=0.2.0",
+  "google-auth-oauthlib>=1.2.1",
+  "jinja2>=3.1",
+  "playwright>=1.51",
+  "python-multipart>=0.0.20",
+  "requests>=2.32",
+  "uvicorn>=0.34",
+]
+
+[project.optional-dependencies]
+local-llm = [
+  "mlx>=0.28",
+  "mlx-lm>=0.28",
+]
+
+[project.scripts]
+forme-hub = "app.cli:main"
+
+[tool.setuptools]
+packages = ["app", "app.services", "app.storage"]

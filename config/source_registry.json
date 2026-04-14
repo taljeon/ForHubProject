@@ -1,0 +1,122 @@
+[
+  {
+    "company": "ONE CAREER",
+    "source_name": "ONE CAREER 신졸 채용",
+    "source_type": "platform",
+    "base_url": "https://www.onecareer.jp",
+    "seed_url": "https://www.onecareer.jp/events",
+    "parser_kind": "static_html",
+    "requires_login": false,
+    "notes": "Platform-wide graduate recruiting source. Static parse first."
+  },
+  {
+    "company": "OpenWork",
+    "source_name": "OpenWork 신졸 채용",
+    "source_type": "platform",
+    "base_url": "https://www.openwork.jp",
+    "seed_url": "https://www.openwork.jp/job/",
+    "parser_kind": "playwright_fallback",
+    "requires_login": true,
+    "notes": "Job pages may require browser automation and saved session."
+  },
+  {
+    "company": "マイナビ",
+    "source_name": "マイナビ 신졸 채용 검색",
+    "source_type": "platform",
+    "base_url": "https://job.mynavi.jp",
+    "seed_url": "https://job.mynavi.jp/27/pc/search/start_entry.html",
+    "parser_kind": "static_html",
+    "requires_login": false,
+    "notes": "Public graduate job entry and search landing page."
+  },
+  {
+    "company": "Track Job",
+    "source_name": "Track Job 엔지니어 채용",
+    "source_type": "platform",
+    "base_url": "https://job.tracks.run",
+    "seed_url": "https://job.tracks.run/",
+    "parser_kind": "static_html",
+    "requires_login": false,
+    "notes": "Engineering-focused platform. Event and job pages mixed."
+  },
+  {
+    "company": "サポーターズ",
+    "source_name": "サポーターズ 이벤트 / 채용",
+    "source_type": "platform",
+    "base_url": "https://talent.supporterz.jp",
+    "seed_url": "https://talent.supporterz.jp/events/",
+    "parser_kind": "static_html",
+    "requires_login": false,
+    "notes": "Event-heavy recruiting platform. Static parse first."
+  },
+  {
+    "company": "外資就活ドットコム",
+    "source_name": "外資就活ドットコム 채용 / 이벤트",
+    "source_type": "platform",
+    "base_url": "https://gaishishukatsu.com",
+    "seed_url": "https://gaishishukatsu.com/",
+    "parser_kind": "playwright_fallback",
+    "requires_login": true,
+    "notes": "Some job and event content may require sign-in."
+  },
+  {
+    "company": "就活会議",
+    "source_name": "就活会議 채용 정보",
+    "source_type": "platform",
+    "base_url": "https://syukatsu-kaigi.jp",
+    "seed_url": "https://syukatsu-kaigi.jp/",
+    "parser_kind": "playwright_fallback",
+    "requires_login": true,
+    "notes": "Account-gated content exists. Prefer browser session when needed."
+  },
+  {
+    "company": "リクナビ",
+    "source_name": "リクナビ 신졸 채용 검색",
+    "source_type": "platform",
+    "base_url": "https://job.rikunabi.com",
+    "seed_url": "https://job.rikunabi.com/n/selection/categories/",
+    "parser_kind": "static_html",
+    "requires_login": false,
+    "notes": "Public new-grad category listing."
+  },
+  {
+    "company": "ソニーグループ",
+    "source_name": "ソニーグループ 채용",
+    "source_type": "company_careers",
+    "base_url": "https://www.sony.com",
+    "seed_url": "https://www.sony.com/ja/SonyInfo/Jobs/",
+    "parser_kind": "static_html",
+    "requires_login": false,
+    "notes": "Company careers page."
+  },
+  {
+    "company": "メルカリ",
+    "source_name": "メルカリ 채용",
+    "source_type": "company_careers",
+    "base_url": "https://careers.mercari.com",
+    "seed_url": "https://careers.mercari.com/en/jobs/",
+    "parser_kind": "static_html",
+    "requires_login": false,
+    "notes": "Engineering roles often tagged clearly in page content."
+  },
+  {
+    "company": "LINEヤフー",
+    "source_name": "LINEヤフー 신졸 채용",
+    "source_type": "company_careers",
+    "base_url": "https://www.lycorp.co.jp",
+    "seed_url": "https://www.lycorp.co.jp/ja/recruit/newgrads/",
+    "parser_kind": "static_html",
+    "requires_login": false,
+    "notes": "Graduate recruiting page."
+  },
+  {
+    "company": "楽天グループ",
+    "source_name": "楽天グループ 채용",
+    "source_type": "company_careers",
+    "base_url": "https://corp.rakuten.co.jp",
+    "seed_url": "https://corp.rakuten.co.jp/careers/",
+    "parser_kind": "static_html",
+    "requires_login": false,
+    "notes": "Static parsing first, Playwright fallback if needed."
+  }
+]
