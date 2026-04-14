@@ -65,7 +65,7 @@ def get_settings() -> Settings:
         blob_backend=os.getenv("FORME_BLOB_BACKEND", "local"),
         drive_blob_folder_id=os.getenv("FORME_DRIVE_BLOB_FOLDER_ID") or None,
         local_llm_backend=os.getenv("FORME_LOCAL_LLM_BACKEND", "mlx"),
-        local_llm_model=os.getenv("FORME_LOCAL_LLM_MODEL", "NexVeridian/Qwen3-14B-4bit"),
+        local_llm_model=os.getenv("FORME_LOCAL_LLM_MODEL", "gemma4:e4b-it-8bit"),
         local_llm_temperature=float(os.getenv("FORME_LOCAL_LLM_TEMPERATURE", "0.1")),
         local_llm_max_tokens=int(os.getenv("FORME_LOCAL_LLM_MAX_TOKENS", "900")),
         local_llm_prompt_max_chars=int(os.getenv("FORME_LOCAL_LLM_MAX_PROMPT_CHARS", "18000")),

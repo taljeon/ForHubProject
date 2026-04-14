@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
-MODEL_NAME="${FORME_LOCAL_LLM_MODEL:-NexVeridian/Qwen3-14B-4bit}"
+MODEL_NAME="${FORME_LOCAL_LLM_MODEL:-gemma4:e4b-it-8bit}"
 
 "$ROOT_DIR/.venv/bin/python" -m pip install "mlx>=0.28" "mlx-lm>=0.28"
 "$ROOT_DIR/.venv/bin/python" -m mlx_lm.generate \
