@@ -1106,7 +1106,7 @@ def update_application_route(
                 next_action=next_action or None,
                 deadline=normalized_deadline,
                 my_priority=normalized_priority,
-                notes=notes or None,
+                notes=notes,
                 settings=settings,
             )
     except ValueError as exc:
@@ -1197,7 +1197,7 @@ def create_interview_note_route(
     with db_session(settings) as connection:
         create_interview_note(
             connection,
-            company_name=parsed_fields["company_name"] or "미분류",
+            company_name=parsed_fields["company_name"] or "未分類",
             source_name=parsed_fields["source_name"] or "수동 메모",
             source_url=parsed_fields["source_url"],
             screening_stage=parsed_fields["screening_stage"],

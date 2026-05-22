@@ -39,7 +39,7 @@ JOB_TRACK_LABELS = {
     "internship": "인턴",
     "main_selection": "본선고",
     "event": "설명회 / 이벤트",
-    "unknown": "미분류",
+    "unknown": "未分類",
 }
 
 INTERNSHIP_HINTS = (
@@ -402,7 +402,7 @@ def extract_job_post_from_html(
         "fetched_at": now_iso(settings.timezone),
     }
     return {
-        "company_name": inferred_company or "미분류",
+        "company_name": inferred_company or "未分類",
         "source_name": resolved_source_name,
         "source_seed_url": url,
         "title": title or page_title,
@@ -642,8 +642,8 @@ def upsert_job_post(
         """,
         (url,),
     ).fetchone()
-    normalized_company_name = company_name.strip() or "미분류"
-    if existing_row and normalized_company_name == "미분류" and existing_row["company_id"] is not None:
+    normalized_company_name = company_name.strip() or "未分類"
+    if existing_row and normalized_company_name == "未分類" and existing_row["company_id"] is not None:
         company_id = int(existing_row["company_id"])
     else:
         company_id = ensure_company(connection, name=normalized_company_name, settings=settings)

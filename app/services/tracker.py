@@ -416,7 +416,7 @@ def merge_interview_note_fields(
             "memo": memo,
         }
     return {
-        "company_name": company_name or metadata.get("company_name") or "미분류",
+        "company_name": company_name or metadata.get("company_name") or "未分類",
         "source_name": source_name or metadata.get("source_name") or "수동 메모",
         "source_url": source_url or metadata.get("source_url"),
         "screening_stage": screening_stage or metadata.get("screening_stage"),
@@ -527,11 +527,13 @@ def update_application(
         field_name="Current stage",
     )
     normalized_priority = _normalize_application_priority(my_priority)
+    preserve_existing_notes = notes is None
+    normalized_notes = None if preserve_existing_notes else _normalize_optional_application_text(notes)
     cursor = connection.execute(
         """
         UPDATE applications
         SET current_stage = ?, next_action = ?, deadline = ?, my_priority = ?,
-            notes = ?, updated_at = ?
+            notes = CASE WHEN ? THEN notes ELSE ? END, updated_at = ?
         WHERE id = ?
         """,
         (
@@ -539,7 +541,8 @@ def update_application(
             _normalize_optional_application_text(next_action),
             _normalize_application_deadline(deadline),
             normalized_priority,
-            _normalize_optional_application_text(notes),
+            1 if preserve_existing_notes else 0,
+            normalized_notes,
             now_iso(settings.timezone),
             application_id,
         ),
@@ -658,7 +661,7 @@ def update_interview_note(
     settings: Settings | None = None,
 ) -> None:
     settings = settings or get_settings()
-    company_id = ensure_company(connection, name=company_name or "미분류", settings=settings)
+    company_id = ensure_company(connection, name=company_name or "未分類", settings=settings)
     raw_blob = store_text_blob(raw_text, namespace="interview_notes", settings=settings) if raw_text else None
     connection.execute(
         """
