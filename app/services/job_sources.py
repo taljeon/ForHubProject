@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 import sqlite3
+import socket
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -37,7 +39,7 @@ JOB_TRACK_LABELS = {
     "internship": "인턴",
     "main_selection": "본선고",
     "event": "설명회 / 이벤트",
-    "unknown": "미분류",
+    "unknown": "未分類",
 }
 
 INTERNSHIP_HINTS = (
@@ -96,6 +98,9 @@ JOB_IMPORT_HEADERS = {
     "Accept-Language": "ja,en-US;q=0.9,en;q=0.8,ko;q=0.7",
 }
 
+ALLOWED_IMPORT_SCHEMES = {"http", "https"}
+VOLATILE_JOB_PAYLOAD_KEYS = {"fetched_at"}
+
 
 def _normalize_space(value: str) -> str:
     return re.sub(r"\s+", " ", value.replace("\u3000", " ")).strip()
@@ -106,6 +111,113 @@ def _truncate_text(value: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 1].rstrip() + "…"
+
+
+def _normalize_job_payload_for_hash(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _normalize_job_payload_for_hash(item)
+            for key, item in sorted(value.items())
+            if key not in VOLATILE_JOB_PAYLOAD_KEYS
+        }
+    if isinstance(value, list):
+        return [_normalize_job_payload_for_hash(item) for item in value]
+    return value
+
+
+def _is_blocked_import_address(value: str) -> bool:
+    address = ipaddress.ip_address(value.split("%", 1)[0])
+    return (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_reserved
+        or address.is_unspecified
+        or getattr(address, "is_site_local", False)
+    )
+
+
+def _validate_public_import_url(url: str) -> str:
+    normalized = url.strip()
+    parsed = urlparse(normalized)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ALLOWED_IMPORT_SCHEMES:
+        raise ValueError("Only http(s) job URLs can be imported.")
+    if parsed.username or parsed.password:
+        raise ValueError("Credential-bearing URLs cannot be imported.")
+
+    hostname = (parsed.hostname or "").strip().lower()
+    if not hostname:
+        raise ValueError("Imported URLs must include a hostname.")
+    if hostname == "localhost" or hostname.endswith((".localhost", ".local", ".internal")):
+        raise ValueError("Local or internal hosts cannot be imported.")
+
+    port = parsed.port or (443 if scheme == "https" else 80)
+    try:
+        resolved = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError(f"Could not resolve import host: {hostname}") from exc
+    if not resolved:
+        raise ValueError(f"Could not resolve import host: {hostname}")
+
+    for _, _, _, _, sockaddr in resolved:
+        if _is_blocked_import_address(str(sockaddr[0])):
+            raise ValueError(f"Import host resolves to a blocked address: {hostname}")
+    return normalized
+
+
+def _fetch_public_import_response(url: str) -> requests.Response:
+    current_url = _validate_public_import_url(url)
+    for _ in range(6):
+        response = requests.get(
+            current_url,
+            headers=JOB_IMPORT_HEADERS,
+            timeout=20,
+            allow_redirects=False,
+        )
+        if 300 <= response.status_code < 400:
+            redirect_target = response.headers.get("location")
+            if not redirect_target:
+                response.raise_for_status()
+            current_url = _validate_public_import_url(urljoin(current_url, redirect_target or ""))
+            continue
+        response.raise_for_status()
+        return response
+    raise ValueError("Too many redirects while importing job URL.")
+
+
+def _job_post_changed(
+    existing_row: sqlite3.Row,
+    *,
+    company_id: int,
+    source_id: int | None,
+    title: str,
+    employment_type: str | None,
+    graduate_year: int | None,
+    engineer_score: float,
+    location: str | None,
+    deadline: str | None,
+    raw_hash: str,
+    status: str,
+    summary: str | None,
+) -> bool:
+    return any(
+        existing_row[column] != value
+        for column, value in (
+            ("company_id", company_id),
+            ("source_id", source_id),
+            ("title", title),
+            ("employment_type", employment_type),
+            ("graduate_year", graduate_year),
+            ("engineer_score", engineer_score),
+            ("location", location),
+            ("deadline", deadline),
+            ("raw_hash", raw_hash),
+            ("status", status),
+            ("summary", summary),
+        )
+    )
 
 
 def infer_source_name_from_url(url: str | None) -> str | None:
@@ -290,7 +402,7 @@ def extract_job_post_from_html(
         "fetched_at": now_iso(settings.timezone),
     }
     return {
-        "company_name": inferred_company or "미분류",
+        "company_name": inferred_company or "未分類",
         "source_name": resolved_source_name,
         "source_seed_url": url,
         "title": title or page_title,
@@ -313,13 +425,12 @@ def import_job_post_from_url(
     settings: Settings | None = None,
 ) -> int:
     settings = settings or get_settings()
-    response = requests.get(url, headers=JOB_IMPORT_HEADERS, timeout=20)
-    response.raise_for_status()
+    response = _fetch_public_import_response(url)
     if not response.encoding:
         response.encoding = response.apparent_encoding or "utf-8"
     extracted = extract_job_post_from_html(
         connection,
-        url=url,
+        url=response.url,
         html=response.text,
         company_name=company_name,
         source_name=source_name,
@@ -510,63 +621,119 @@ def upsert_job_post(
 ) -> int:
     settings = settings or get_settings()
     timestamp = now_iso(settings.timezone)
-    company_id = ensure_company(connection, name=company_name, settings=settings)
     source_row = connection.execute(
         "SELECT id FROM job_sources WHERE seed_url = ?",
         (source_seed_url,),
     ).fetchone()
     source_id = int(source_row["id"]) if source_row else None
     payload = raw_payload or {}
-    raw_blob = store_json_blob(payload, namespace="job_posts", settings=settings) if payload else None
     engineer_score = score_engineer_fit(title, summary or "", url)
-    raw_hash = stable_hash(payload or {"title": title, "url": url})
-    connection.execute(
-        """
-        INSERT INTO job_posts (
-            company_id, source_id, title, url, employment_type, graduate_year,
-            engineer_score, location, deadline, raw_hash, discovered_at, changed_at,
-            status, summary, raw_payload_json, raw_blob_id, raw_storage_backend, raw_checksum, raw_size_bytes
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(url) DO UPDATE SET
-            title = excluded.title,
-            employment_type = excluded.employment_type,
-            graduate_year = excluded.graduate_year,
-            engineer_score = excluded.engineer_score,
-            location = excluded.location,
-            deadline = excluded.deadline,
-            raw_hash = excluded.raw_hash,
-            changed_at = excluded.changed_at,
-            status = excluded.status,
-            summary = excluded.summary,
-            raw_payload_json = excluded.raw_payload_json,
-            raw_blob_id = COALESCE(excluded.raw_blob_id, job_posts.raw_blob_id),
-            raw_storage_backend = COALESCE(excluded.raw_storage_backend, job_posts.raw_storage_backend),
-            raw_checksum = COALESCE(excluded.raw_checksum, job_posts.raw_checksum),
-            raw_size_bytes = COALESCE(excluded.raw_size_bytes, job_posts.raw_size_bytes)
-        """,
-        (
-            company_id,
-            source_id,
-            title,
-            url,
-            employment_type,
-            graduate_year,
-            engineer_score,
-            location,
-            deadline,
-            raw_hash,
-            timestamp,
-            timestamp,
-            status,
-            summary,
-            None,
-            raw_blob.blob_id if raw_blob else None,
-            raw_blob.storage_backend if raw_blob else None,
-            raw_blob.checksum if raw_blob else None,
-            raw_blob.size_bytes if raw_blob else None,
-        ),
+    raw_hash = stable_hash(
+        _normalize_job_payload_for_hash(payload) if payload else {"title": title, "url": url}
     )
+    existing_row = connection.execute(
+        """
+        SELECT id, company_id, source_id, title, employment_type, graduate_year,
+               engineer_score, location, deadline, raw_hash, discovered_at, changed_at,
+               status, summary, raw_payload_json, raw_blob_id, raw_storage_backend,
+               raw_checksum, raw_size_bytes
+        FROM job_posts
+        WHERE url = ?
+        """,
+        (url,),
+    ).fetchone()
+    normalized_company_name = company_name.strip() or "未分類"
+    if existing_row and normalized_company_name == "未分類" and existing_row["company_id"] is not None:
+        company_id = int(existing_row["company_id"])
+    else:
+        company_id = ensure_company(connection, name=normalized_company_name, settings=settings)
+    should_store_blob = bool(
+        payload and (not existing_row or existing_row["raw_hash"] != raw_hash or not existing_row["raw_blob_id"])
+    )
+    raw_blob = store_json_blob(payload, namespace="job_posts", settings=settings) if should_store_blob else None
+
+    if not existing_row:
+        connection.execute(
+            """
+            INSERT INTO job_posts (
+                company_id, source_id, title, url, employment_type, graduate_year,
+                engineer_score, location, deadline, raw_hash, discovered_at, changed_at,
+                status, summary, raw_payload_json, raw_blob_id, raw_storage_backend, raw_checksum, raw_size_bytes
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                company_id,
+                source_id,
+                title,
+                url,
+                employment_type,
+                graduate_year,
+                engineer_score,
+                location,
+                deadline,
+                raw_hash,
+                timestamp,
+                timestamp,
+                status,
+                summary,
+                None,
+                raw_blob.blob_id if raw_blob else None,
+                raw_blob.storage_backend if raw_blob else None,
+                raw_blob.checksum if raw_blob else None,
+                raw_blob.size_bytes if raw_blob else None,
+            ),
+        )
+    else:
+        resolved_source_id = source_id if source_id is not None else existing_row["source_id"]
+        changed_at = (
+            timestamp
+            if _job_post_changed(
+                existing_row,
+                company_id=company_id,
+                source_id=resolved_source_id,
+                title=title,
+                employment_type=employment_type,
+                graduate_year=graduate_year,
+                engineer_score=engineer_score,
+                location=location,
+                deadline=deadline,
+                raw_hash=raw_hash,
+                status=status,
+                summary=summary,
+            )
+            else existing_row["changed_at"]
+        )
+        connection.execute(
+            """
+            UPDATE job_posts
+            SET company_id = ?, source_id = ?, title = ?, employment_type = ?, graduate_year = ?,
+                engineer_score = ?, location = ?, deadline = ?, raw_hash = ?, changed_at = ?,
+                status = ?, summary = ?, raw_payload_json = ?, raw_blob_id = ?, raw_storage_backend = ?,
+                raw_checksum = ?, raw_size_bytes = ?
+            WHERE id = ?
+            """,
+            (
+                company_id,
+                resolved_source_id,
+                title,
+                employment_type,
+                graduate_year,
+                engineer_score,
+                location,
+                deadline,
+                raw_hash,
+                changed_at,
+                status,
+                summary,
+                None if raw_blob else existing_row["raw_payload_json"],
+                raw_blob.blob_id if raw_blob else existing_row["raw_blob_id"],
+                raw_blob.storage_backend if raw_blob else existing_row["raw_storage_backend"],
+                raw_blob.checksum if raw_blob else existing_row["raw_checksum"],
+                raw_blob.size_bytes if raw_blob else existing_row["raw_size_bytes"],
+                int(existing_row["id"]),
+            ),
+        )
     row = connection.execute("SELECT id FROM job_posts WHERE url = ?", (url,)).fetchone()
     return int(row["id"])
 
@@ -668,8 +835,7 @@ def update_job_post_details(
             raw_blob_id = COALESCE(?, raw_blob_id),
             raw_storage_backend = COALESCE(?, raw_storage_backend),
             raw_checksum = COALESCE(?, raw_checksum),
-            raw_size_bytes = COALESCE(?, raw_size_bytes),
-            changed_at = ?
+            raw_size_bytes = COALESCE(?, raw_size_bytes)
         WHERE id = ?
         """,
         (
@@ -681,7 +847,6 @@ def update_job_post_details(
             raw_blob.storage_backend if raw_blob else None,
             raw_blob.checksum if raw_blob else None,
             raw_blob.size_bytes if raw_blob else None,
-            now_iso(settings.timezone),
             job_id,
         ),
     )

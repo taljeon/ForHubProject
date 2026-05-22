@@ -36,10 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument(
         "--include-login-required",
         action="store_true",
-        help="Also scan sources marked as login-required.",
+        help="Also report login-required sources; unsupported sources are skipped without fetching.",
     )
     subparsers.add_parser("sync-gmail-full")
     subparsers.add_parser("sync-gmail-incremental")
+    subparsers.add_parser("sync-gmail-auto")
     mail_parser = subparsers.add_parser("list-mail")
     mail_parser.add_argument("--limit", type=int, default=10)
     subparsers.add_parser("show-config")
@@ -178,6 +179,8 @@ def main() -> None:
         try:
             if args.command == "sync-gmail-full":
                 result = gmail_service.full_sync(connection)
+            elif args.command == "sync-gmail-auto":
+                result = gmail_service.auto_sync(connection)
             else:
                 result = gmail_service.incremental_sync(connection)
         except GmailConfigError as exc:

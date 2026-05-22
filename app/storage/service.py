@@ -153,8 +153,7 @@ def migrate_raw_fields_to_blobs(
             """
             UPDATE job_posts
             SET raw_blob_id = ?, raw_storage_backend = ?, raw_checksum = ?, raw_size_bytes = ?,
-                raw_payload_json = CASE WHEN ? THEN NULL ELSE raw_payload_json END,
-                changed_at = ?
+                raw_payload_json = CASE WHEN ? THEN NULL ELSE raw_payload_json END
             WHERE id = ?
             """,
             (
@@ -163,7 +162,6 @@ def migrate_raw_fields_to_blobs(
                 blob.checksum,
                 blob.size_bytes,
                 1 if clear_legacy_columns else 0,
-                timestamp,
                 row["id"],
             ),
         )

@@ -119,15 +119,6 @@
             <input type="hidden" name="calendar_status" value="{{ snapshot.calendar_status }}" />
             <button type="submit">今すぐメール同期</button>
           </form>
-          <form method="post" action="/mail/ingest-links">
-            <input type="hidden" name="return_view" value="{{ snapshot.view }}" />
-            <input type="hidden" name="return_page" value="{{ snapshot.page }}" />
-            <input type="hidden" name="auto_refresh" value="{{ snapshot.auto_refresh_seconds }}" />
-            <input type="hidden" name="mail_kind" value="{{ snapshot.mail_kind }}" />
-            <input type="hidden" name="entry_status" value="{{ snapshot.entry_status }}" />
-            <input type="hidden" name="calendar_status" value="{{ snapshot.calendar_status }}" />
-            <button type="submit" class="secondary">メールとアカウントを再連携</button>
-          </form>
           {% if snapshot.view == 'mail' %}
           <a class="button-link secondary" href="/?view=mail&page={{ snapshot.page }}&mail_kind={{ snapshot.mail_kind }}">画面を更新</a>
           <a class="button-link{% if snapshot.auto_refresh_seconds == 0 %} selected{% else %} secondary{% endif %}" href="/?view=mail&page=1&mail_kind={{ snapshot.mail_kind }}">自動オフ</a>
@@ -170,24 +161,24 @@
           <details class="disclosure-card inline-disclosure">
             <summary class="disclosure-summary">
               <div class="disclosure-copy">
-                <strong>ローカルパスとストレージ</strong>
-                <p>OAuth、blob、digest のパスは必要なときだけ開きます。</p>
+                <strong>ローカル保存ポリシー</strong>
+                <p>認証情報と原文データはローカル専用で保管し、画面には実パスを出しません。</p>
               </div>
               <span class="disclosure-toggle">開く</span>
             </summary>
             <div class="disclosure-body compact-body">
               <div class="info-stack">
                 <div class="info-row">
-                  <span>OAuthファイル</span>
-                  <code>{{ settings.gmail_credentials_path }}</code>
+                  <span>OAuth情報</span>
+                  <code>ローカル専用 / 非表示</code>
                 </div>
                 <div class="info-row">
                   <span>Playwright状態</span>
-                  <code>{{ settings.playwright_auth_dir }}</code>
+                  <code>ローカル専用 / 非表示</code>
                 </div>
                 <div class="info-row">
                   <span>要約アーカイブ</span>
-                  <code>{{ settings.digest_dir }}</code>
+                  <code>ローカル保存</code>
                 </div>
                 <div class="info-row">
                   <span>体験記ノート保存方式</span>
@@ -195,7 +186,7 @@
                 </div>
                 <div class="info-row">
                   <span>Blob ストレージ</span>
-                  <code>{{ settings.blob_backend }} / {{ settings.blob_dir }}</code>
+                  <code>{{ settings.blob_backend }}</code>
                 </div>
                 {% if snapshot.latest_digest %}
                 <div class="info-row">
@@ -645,7 +636,7 @@
                     <label class="full">MyPage URL<input name="mypage_url" value="{{ message.entry_mypage_url_candidate }}" placeholder="https://mypage...." /></label>
                     <label>連絡メール<input name="contact_email" value="{{ message.entry_contact_email_candidate }}" /></label>
                     <label>Vault項目ID<input name="vault_item_id" value="{{ message.entry_vault_item_id_candidate }}" placeholder="kp://jobhunt/item" /></label>
-                    <label class="full">Playwright状態パス<input name="playwright_state_path" value="{{ message.entry_playwright_state_path_candidate }}" placeholder="{{ settings.playwright_auth_dir }}/site.json" /></label>
+                    <label class="full">Playwright状態パス<input name="playwright_state_path" value="{{ message.entry_playwright_state_path_candidate }}" placeholder="site.json" /></label>
                     <label class="full">メモ<textarea name="notes" rows="3">{{ message.entry_notes_candidate }}</textarea></label>
                     <button type="submit">アカウント保存して完了</button>
                   </form>
@@ -1012,11 +1003,6 @@
             {{ filter.label }} {{ snapshot.job_filter_counts[filter.key] }}
           </a>
           {% endfor %}
-          <form method="post" action="/jobs/classify-review-needed">
-            <input type="hidden" name="grad_year" value="{{ snapshot.job_grad_year }}" />
-            <input type="hidden" name="limit" value="10" />
-            <button type="submit" class="secondary">要確認 10件を分類</button>
-          </form>
         </div>
       </section>
 
@@ -1051,8 +1037,8 @@
             </div>
             <div class="row-inline">
               <a class="inline-link" href="/jobs/{{ post.id }}">詳細を見る</a>
-              {% if post.url %}
-              <a class="inline-link" href="{{ post.url }}" target="_blank" rel="noreferrer">原文を開く</a>
+              {% if post.url|safe_external_url %}
+              <a class="inline-link" href="{{ post.url|safe_external_url }}" target="_blank" rel="noreferrer noopener">原文を開く</a>
               {% endif %}
             </div>
           </div>
@@ -1491,8 +1477,8 @@
                     <button type="submit" class="secondary small-button">MLX再整理</button>
                   </form>
                 </div>
-                {% if note.source_url %}
-                <a class="inline-link" href="{{ note.source_url }}" target="_blank" rel="noreferrer">出典 開く</a>
+                {% if note.source_url|safe_external_url %}
+                <a class="inline-link" href="{{ note.source_url|safe_external_url }}" target="_blank" rel="noreferrer noopener">出典 開く</a>
                 {% endif %}
                 <div class="note-section">
                   <strong>要点要約</strong>
@@ -1637,7 +1623,7 @@
                   </a>
                 </div>
                 {% endif %}
-                <p>{{ account.playwright_state_path or '状態ファイル未登録' }}</p>
+                <p>{{ account.playwright_state_path|path_tail if account.playwright_state_path else '状態ファイル未登録' }}</p>
                 {% if account.notes %}<p>{{ account.notes }}</p>{% endif %}
               </div>
             </details>
@@ -1667,7 +1653,7 @@
                 <label class="full">マイページ URL<input name="mypage_url" placeholder="https://mypage...." /></label>
                 <label>連絡メール<input name="contact_email" value="me@example.com" /></label>
                 <label>Vault項目ID<input name="vault_item_id" placeholder="kp://jobhunt/item" /></label>
-                <label class="full">Playwright状態パス<input name="playwright_state_path" placeholder="{{ settings.playwright_auth_dir }}/site.json" /></label>
+                <label class="full">Playwright状態パス<input name="playwright_state_path" placeholder="site.json" /></label>
                 <label>メール移管状況
                   <select name="email_migrated">
                     <option value="yes">完了</option>

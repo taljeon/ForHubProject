@@ -2,7 +2,8 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+. "$(cd "$(dirname "$0")" && pwd)/common.sh"
+GMAIL_CREDENTIALS_PATH="${FORME_GMAIL_CREDENTIALS:-$ROOT_DIR/auth/google-oauth/credentials.json}"
 
 if [[ $# -lt 1 ]]; then
   echo "使い方: $0 <project-id> [project-name]"
@@ -23,7 +24,13 @@ if [[ -n "$ACCOUNT_EXPECTED" && "$ACTIVE_ACCOUNT" != "$ACCOUNT_EXPECTED" ]]; the
 fi
 
 echo "プロジェクトを作成します: $PROJECT_ID ($PROJECT_NAME)"
-gcloud projects create "$PROJECT_ID" --name="$PROJECT_NAME" || true
+if ! gcloud projects create "$PROJECT_ID" --name="$PROJECT_NAME"; then
+  if ! gcloud projects describe "$PROJECT_ID" >/dev/null 2>&1; then
+    echo "gcloud projects create failed and project '$PROJECT_ID' does not exist." >&2
+    exit 1
+  fi
+  echo "Project '$PROJECT_ID' already exists. Continuing with existing project."
+fi
 gcloud config set project "$PROJECT_ID"
 gcloud services enable gmail.googleapis.com
 
@@ -39,7 +46,7 @@ cat <<EOF
 5. Data Access に https://www.googleapis.com/auth/gmail.readonly を追加する
 6. Clients > Create Client > Desktop app を作成する
 7. JSON をダウンロードして次へ保存する:
-   $ROOT_DIR/auth/google-oauth/credentials.json
+   $GMAIL_CREDENTIALS_PATH
 
 その後、次を実行します:
   cd $ROOT_DIR
