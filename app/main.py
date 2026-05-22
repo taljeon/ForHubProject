@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import secrets
+from functools import lru_cache
 from html import escape
+from ipaddress import ip_address
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode, urlparse
 
 from fastapi import FastAPI, Form, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.config import get_settings
 from app.db import db_session, init_db
-from app.services.bootstrap import ensure_project_dirs
+from app.services.bootstrap import ensure_private_directory, ensure_private_file, ensure_project_dirs
 from app.services.digest import build_dashboard_view, build_digest, get_latest_digest_record
 from app.services.gmail_sync import GmailConfigError, GmailSyncService
 from app.services.job_sources import (
@@ -38,13 +42,160 @@ from app.services.tracker import (
     update_application,
     upsert_site_account,
 )
-from app.utils import json_dumps, now_iso, today_local
+from app.utils import (
+    json_dumps,
+    normalize_navigation_url,
+    normalize_optional_date,
+    normalize_priority,
+    now_iso,
+    today_local,
+)
 
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name)
+app = FastAPI(
+    title=settings.app_name,
+    docs_url="/docs" if settings.enable_api_docs else None,
+    redoc_url="/redoc" if settings.enable_api_docs else None,
+    openapi_url="/openapi.json" if settings.enable_api_docs else None,
+)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.allowed_hosts))
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 templates = Jinja2Templates(directory=str(settings.templates_dir))
+
+_JA_TEXT_MAP = {
+    "applied": "応募完了",
+    "document": "書類選考",
+    "interview": "面接",
+    "offer": "内定",
+    "rejected": "見送り",
+    "withdrawn": "辞退",
+    "pending": "未処理",
+    "passed": "通過",
+    "failed": "不合格",
+    "엔트리 제출 완료": "エントリー提出完了",
+    "엔트리 접수": "エントリー受付",
+    "1차 면접": "一次面接",
+    "2차 면접": "二次面接",
+    "최종 면접": "最終面接",
+    "코딩 테스트": "コーディングテスト",
+    "적성 검사": "適性検査",
+    "본선고": "本選考",
+}
+
+
+def _ja_text(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return _JA_TEXT_MAP.get(text, text)
+
+
+def _path_tail(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return Path(text.rstrip("/")).name or text
+
+
+templates.env.filters["ja_text"] = _ja_text
+templates.env.filters["path_tail"] = _path_tail
+templates.env.filters["safe_external_url"] = normalize_navigation_url
+
+
+@lru_cache(maxsize=1)
+def _get_dashboard_access_token() -> str:
+    token_path = settings.dashboard_access_token_path
+    ensure_private_directory(token_path.parent)
+    ensure_private_file(token_path)
+    if token_path.exists():
+        token = token_path.read_text(encoding="utf-8").strip()
+        if token:
+            return token
+    token = secrets.token_urlsafe(32)
+    token_path.write_text(token, encoding="utf-8")
+    ensure_private_file(token_path)
+    return token
+
+
+def _is_loopback_host(value: str | None) -> bool:
+    if value is None:
+        return False
+    normalized = value.strip().lower().strip("[]")
+    if normalized in {"localhost", "testserver", "testclient"}:
+        return True
+    try:
+        return ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _has_same_origin(request: Request) -> bool:
+    target_origin = f"{request.url.scheme}://{request.url.netloc}"
+    for header_name in ("origin", "referer"):
+        raw_value = request.headers.get(header_name)
+        if not raw_value:
+            continue
+        parsed = urlparse(raw_value)
+        if f"{parsed.scheme}://{parsed.netloc}" == target_origin:
+            return True
+    return False
+
+
+def _build_clean_redirect_url(request: Request) -> str:
+    query_items = [
+        (key, value)
+        for key, value in request.query_params.multi_items()
+        if key != "access_token"
+    ]
+    query = urlencode(query_items)
+    return f"{request.url.path}?{query}" if query else request.url.path
+
+
+def _normalize_source_url(value: str | None) -> str | None:
+    normalized = normalize_navigation_url(value)
+    if value and normalized is None:
+        raise ValueError("출처 URL은 http 또는 https 링크만 허용합니다.")
+    return normalized
+
+
+def _path_within(base_dir: Path, candidate: Path) -> bool:
+    try:
+        candidate.resolve().relative_to(base_dir.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+@app.middleware("http")
+async def protect_local_dashboard(request: Request, call_next) -> Response:
+    if settings.require_localhost:
+        client_host = request.client.host if request.client else None
+        if not (_is_loopback_host(client_host) and _is_loopback_host(request.url.hostname)):
+            return PlainTextResponse("This dashboard only accepts localhost requests.", status_code=403)
+
+    if request.url.path.startswith("/static/") or request.url.path == "/healthz":
+        return await call_next(request)
+
+    access_token = _get_dashboard_access_token()
+    request_token = request.query_params.get("access_token")
+    cookie_token = request.cookies.get("forme_access_token")
+    if request_token != access_token and cookie_token != access_token:
+        return PlainTextResponse("Dashboard access token required.", status_code=401)
+
+    if settings.require_same_origin_posts and request.method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+        if not _has_same_origin(request):
+            return PlainTextResponse("Cross-origin requests are not allowed.", status_code=403)
+
+    if request.method.upper() == "GET" and request_token == access_token:
+        response = RedirectResponse(url=_build_clean_redirect_url(request), status_code=303)
+        response.set_cookie("forme_access_token", access_token, httponly=True, samesite="strict")
+        return response
+
+    response = await call_next(request)
+    if request_token == access_token:
+        response.set_cookie("forme_access_token", access_token, httponly=True, samesite="strict")
+    return response
 
 
 def _build_note_prefill_raw(
@@ -71,9 +222,15 @@ def _build_note_prefill_raw(
 @app.on_event("startup")
 def startup() -> None:
     ensure_project_dirs(settings)
+    _get_dashboard_access_token()
     with db_session(settings) as connection:
         init_db(connection)
         seed_registry(connection, settings)
+
+
+@app.get("/healthz")
+def healthcheck() -> PlainTextResponse:
+    return PlainTextResponse("ok")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -103,7 +260,7 @@ def dashboard(
     note_prefill_raw = _build_note_prefill_raw(
         company_name=note_company,
         source_name=note_source_name,
-        source_url=note_source_url,
+        source_url=normalize_navigation_url(note_source_url),
         screening_stage=note_stage,
     )
     return templates.TemplateResponse(
@@ -140,6 +297,21 @@ def latest_digest_view() -> HTMLResponse:
         )
 
     digest_path = Path(str(latest_digest["markdown_path"]))
+    if not _path_within(settings.digest_dir, digest_path):
+        return HTMLResponse(
+            """
+            <!DOCTYPE html>
+            <html lang="ko">
+              <head><meta charset="utf-8"><title>최근 요약</title></head>
+              <body style="font-family: sans-serif; padding: 24px;">
+                <h1>요약 파일 경로가 올바르지 않습니다.</h1>
+                <p>대시보드에서 새 요약 파일을 다시 생성하세요.</p>
+              </body>
+            </html>
+            """,
+            status_code=400,
+        )
+
     if not digest_path.exists():
         return HTMLResponse(
             f"""
@@ -148,7 +320,7 @@ def latest_digest_view() -> HTMLResponse:
               <head><meta charset="utf-8"><title>최근 요약</title></head>
               <body style="font-family: sans-serif; padding: 24px;">
                 <h1>요약 파일을 찾을 수 없습니다.</h1>
-                <p>{escape(str(digest_path))}</p>
+                <p>대시보드에서 새 요약 파일을 다시 생성하세요.</p>
               </body>
             </html>
             """,
@@ -536,12 +708,19 @@ def job_detail_view(job_id: int, notice: str | None = None) -> HTMLResponse:
     sections = raw_payload.get("sections") or []
     body_text = str(raw_payload.get("body_text") or "").strip()
     source_name = str(raw_payload.get("source_name") or "수동 링크").strip()
+    source_url = normalize_navigation_url(str(post.get("url") or "").strip() or None)
     note_prefill_link = (
         "/?view=notes"
         f"&note_company={quote(str(post.get('company_name') or ''))}"
         f"&note_source_name={quote(source_name)}"
-        f"&note_source_url={quote(str(post.get('url') or ''))}"
         f"&note_stage={quote(str(post.get('track_label') or ''))}"
+    )
+    if source_url:
+        note_prefill_link += f"&note_source_url={quote(source_url)}"
+    source_link_html = (
+        f"<a class='link-button secondary' href='{escape(source_url)}' target='_blank' rel='noreferrer noopener'>원문 열기</a>"
+        if source_url
+        else ""
     )
 
     section_html = "".join(
@@ -695,7 +874,7 @@ def job_detail_view(job_id: int, notice: str | None = None) -> HTMLResponse:
               {notice_html}
               <section class="panel">
                 <div class="top-actions">
-                  <a class="link-button secondary" href="{escape(str(post.get('url') or '#'))}" target="_blank" rel="noreferrer">원문 열기</a>
+                  {source_link_html}
                   <a class="link-button secondary" href="{escape(note_prefill_link)}">후기 노트로 보내기</a>
                   <form method="post" action="/jobs/{int(post['id'])}/summarize-local">
                     <button type="submit">MLX 공고 정리</button>
@@ -748,11 +927,14 @@ def sync_mail_route(
     return_view: str = Form("mail"),
     return_page: int = Form(1),
     auto_refresh: int = Form(0),
+    mail_kind: str = Form("all"),
+    entry_status: str = Form("pending"),
+    calendar_status: str = Form("pending"),
 ) -> RedirectResponse:
     gmail_service = GmailSyncService(settings)
     try:
         with db_session(settings) as connection:
-            result = gmail_service.incremental_sync(connection)
+            result = gmail_service.auto_sync(connection)
         notice = quote(
             f"메일 동기화를 완료했습니다. 처리 건수 {result.processed_messages}, history ID {result.last_history_id or '-'}"
         )
@@ -760,10 +942,17 @@ def sync_mail_route(
         notice = quote(f"메일 동기화에 실패했습니다: {exc}")
     refresh_value = auto_refresh if auto_refresh in {0, 30, 60} else 0
     target_page = return_page if return_page > 0 else 1
+    return_filters = ""
+    if return_view == "mail":
+        return_filters = f"&mail_kind={quote(mail_kind)}"
+    elif return_view == "mypage_entry":
+        return_filters = f"&entry_status={quote(entry_status)}"
+    elif return_view == "calendar_review":
+        return_filters = f"&calendar_status={quote(calendar_status)}"
     return RedirectResponse(
         url=(
             f"/?view={quote(return_view)}&page={target_page}"
-            f"&auto_refresh={refresh_value}&notice={notice}"
+            f"&auto_refresh={refresh_value}{return_filters}&notice={notice}"
         ),
         status_code=303,
     )
@@ -784,6 +973,11 @@ def import_job_url_route(
                 source_name=source_name.strip() or None,
                 settings=settings,
             )
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/?view=jobs&notice={quote(str(exc))}",
+            status_code=303,
+        )
     except Exception as exc:
         return RedirectResponse(
             url=f"/?view=jobs&notice={quote(f'공고 링크를 가져오지 못했습니다: {exc}')}",
@@ -852,18 +1046,32 @@ def create_application_route(
     notes: str = Form(""),
     return_view: str = Form("applications"),
 ) -> RedirectResponse:
-    with db_session(settings) as connection:
-        create_application(
-            connection,
-            company_name=company_name,
-            route=route or None,
-            contact_email=contact_email or None,
-            current_stage=current_stage,
-            next_action=next_action or None,
-            deadline=deadline or None,
-            my_priority=my_priority,
-            notes=notes or None,
-            settings=settings,
+    try:
+        normalized_deadline = normalize_optional_date(deadline)
+        normalized_priority = normalize_priority(my_priority)
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/?view={quote(return_view)}&notice={quote(str(exc))}",
+            status_code=303,
+        )
+    try:
+        with db_session(settings) as connection:
+            create_application(
+                connection,
+                company_name=company_name,
+                route=route or None,
+                contact_email=contact_email or None,
+                current_stage=current_stage,
+                next_action=next_action or None,
+                deadline=normalized_deadline,
+                my_priority=normalized_priority,
+                notes=notes or None,
+                settings=settings,
+            )
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/?view={quote(return_view)}&notice={quote(str(exc))}",
+            status_code=303,
         )
     return RedirectResponse(
         url=f"/?view={quote(return_view)}&notice={quote('지원 현황을 저장했습니다.')}",
@@ -881,16 +1089,30 @@ def update_application_route(
     notes: str = Form(""),
     return_view: str = Form("applications"),
 ) -> RedirectResponse:
-    with db_session(settings) as connection:
-        update_application(
-            connection,
-            application_id,
-            current_stage=current_stage,
-            next_action=next_action or None,
-            deadline=deadline or None,
-            my_priority=my_priority,
-            notes=notes or None,
-            settings=settings,
+    try:
+        normalized_deadline = normalize_optional_date(deadline)
+        normalized_priority = normalize_priority(my_priority)
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/?view={quote(return_view)}&notice={quote(str(exc))}",
+            status_code=303,
+        )
+    try:
+        with db_session(settings) as connection:
+            update_application(
+                connection,
+                application_id,
+                current_stage=current_stage,
+                next_action=next_action or None,
+                deadline=normalized_deadline,
+                my_priority=normalized_priority,
+                notes=notes or None,
+                settings=settings,
+            )
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/?view={quote(return_view)}&notice={quote(str(exc))}",
+            status_code=303,
         )
     return RedirectResponse(
         url=f"/?view={quote(return_view)}&notice={quote('지원 단계 정보를 수정했습니다.')}",
@@ -937,19 +1159,26 @@ def create_interview_note_route(
     resolved_checked_at = checked_at or (
         today_local(settings.timezone).isoformat() if raw_text.strip() else ""
     )
-    parsed_fields = merge_interview_note_fields(
-        raw_text=raw_text or None,
-        company_name=company_name or None,
-        source_name=source_name or None,
-        source_url=source_url or None,
-        screening_stage=screening_stage or None,
-        question_tags=question_tags or None,
-        summary_note=summary_note or None,
-        question_examples=question_examples or None,
-        prep_points=prep_points or None,
-        memo=memo or None,
-        prefer_parsed=False,
-    )
+    try:
+        parsed_fields = merge_interview_note_fields(
+            raw_text=raw_text or None,
+            company_name=company_name or None,
+            source_name=source_name or None,
+            source_url=source_url or None,
+            screening_stage=screening_stage or None,
+            question_tags=question_tags or None,
+            summary_note=summary_note or None,
+            question_examples=question_examples or None,
+            prep_points=prep_points or None,
+            memo=memo or None,
+            prefer_parsed=False,
+        )
+        parsed_fields["source_url"] = _normalize_source_url(parsed_fields["source_url"])
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/?view={quote(return_view)}&notice={quote(str(exc))}",
+            status_code=303,
+        )
     detail_json = json_dumps(
         build_interview_note_detail(
             raw_text=raw_text or None,
@@ -1004,19 +1233,26 @@ def update_interview_note_route(
     checked_at: str = Form(""),
     return_view: str = Form("notes"),
 ) -> RedirectResponse:
-    parsed_fields = merge_interview_note_fields(
-        raw_text=raw_text or None,
-        company_name=company_name or None,
-        source_name=source_name or None,
-        source_url=source_url or None,
-        screening_stage=screening_stage or None,
-        question_tags=question_tags or None,
-        summary_note=summary_note or None,
-        question_examples=question_examples or None,
-        prep_points=prep_points or None,
-        memo=memo or None,
-        prefer_parsed=bool(raw_text.strip()),
-    )
+    try:
+        parsed_fields = merge_interview_note_fields(
+            raw_text=raw_text or None,
+            company_name=company_name or None,
+            source_name=source_name or None,
+            source_url=source_url or None,
+            screening_stage=screening_stage or None,
+            question_tags=question_tags or None,
+            summary_note=summary_note or None,
+            question_examples=question_examples or None,
+            prep_points=prep_points or None,
+            memo=memo or None,
+            prefer_parsed=bool(raw_text.strip()),
+        )
+        parsed_fields["source_url"] = _normalize_source_url(parsed_fields["source_url"])
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/?view={quote(return_view)}&notice={quote(str(exc))}",
+            status_code=303,
+        )
     detail_json = json_dumps(
         build_interview_note_detail(
             raw_text=raw_text or None,
@@ -1168,6 +1404,11 @@ def import_site_accounts_route(
 
 @app.post("/seed-demo")
 def seed_demo_route() -> RedirectResponse:
+    if not settings.enable_demo_tools:
+        return RedirectResponse(
+            url=f"/?notice={quote('데모 도구가 비활성화되어 있습니다.')}",
+            status_code=303,
+        )
     with db_session(settings) as connection:
         seed_demo_data(connection, settings)
     return RedirectResponse(url=f"/?notice={quote('데모 데이터를 반영했습니다.')}", status_code=303)

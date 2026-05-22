@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.config import Settings, get_settings
+from app.services.bootstrap import ensure_private_directory, ensure_private_file
 from app.utils import json_dumps, now_iso
 
 
@@ -26,6 +27,12 @@ class GmailSyncService:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
 
+    def _prepare_auth_storage(self) -> None:
+        ensure_private_directory(self.settings.gmail_credentials_path.parent)
+        ensure_private_directory(self.settings.gmail_token_path.parent)
+        ensure_private_file(self.settings.gmail_credentials_path)
+        ensure_private_file(self.settings.gmail_token_path)
+
     def _build_client(self):
         try:
             from google.auth.transport.requests import Request
@@ -37,6 +44,7 @@ class GmailSyncService:
                 "Google API dependencies are missing. Run `pip install -e .` first."
             ) from exc
 
+        self._prepare_auth_storage()
         creds = None
         if self.settings.gmail_token_path.exists():
             creds = Credentials.from_authorized_user_file(
@@ -49,7 +57,8 @@ class GmailSyncService:
             else:
                 if not self.settings.gmail_credentials_path.exists():
                     raise GmailConfigError(
-                        f"Desktop OAuth credentials not found at {self.settings.gmail_credentials_path}"
+                        "Desktop OAuth credentials are missing. Put `credentials.json` under "
+                        "`auth/google-oauth/` or set `FORME_GMAIL_CREDENTIALS`."
                     )
                 flow = InstalledAppFlow.from_client_secrets_file(
                     str(self.settings.gmail_credentials_path),
@@ -57,6 +66,7 @@ class GmailSyncService:
                 )
                 creds = flow.run_local_server(port=0)
             self.settings.gmail_token_path.write_text(creds.to_json(), encoding="utf-8")
+            ensure_private_file(self.settings.gmail_token_path)
         return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
     def _ensure_mail_account(self, connection: sqlite3.Connection, account_email: str) -> int:
@@ -244,6 +254,13 @@ class GmailSyncService:
             mode="full",
         )
 
+    def _should_bootstrap_full_sync(self, exc: GmailConfigError) -> bool:
+        message = str(exc)
+        return (
+            "No stored history ID" in message
+            or "Stored history ID expired" in message
+        )
+
     def incremental_sync(self, connection: sqlite3.Connection) -> SyncResult:
         try:
             from googleapiclient.errors import HttpError
@@ -325,6 +342,22 @@ class GmailSyncService:
             last_history_id=newest_history_id,
             mode="partial",
         )
+
+    def sync_with_bootstrap(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        max_full_sync_results: int = 100,
+    ) -> SyncResult:
+        try:
+            return self.incremental_sync(connection)
+        except GmailConfigError as exc:
+            if not self._should_bootstrap_full_sync(exc):
+                raise
+        return self.full_sync(connection, max_results=max_full_sync_results)
+
+    def auto_sync(self, connection: sqlite3.Connection) -> SyncResult:
+        return self.sync_with_bootstrap(connection)
 
 
 def list_recent_messages(

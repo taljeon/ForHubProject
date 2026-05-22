@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from datetime import date
 from typing import Any
 from urllib.parse import urlparse
 
@@ -427,6 +428,38 @@ def merge_interview_note_fields(
     }
 
 
+def _normalize_optional_application_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _normalize_required_application_text(value: str | None, *, field_name: str) -> str:
+    normalized = _normalize_optional_application_text(value)
+    if not normalized:
+        raise ValueError(f"{field_name} is required.")
+    return normalized
+
+
+def _normalize_application_deadline(value: str | None) -> str | None:
+    normalized = _normalize_optional_application_text(value)
+    if not normalized:
+        return None
+    try:
+        date.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError("Application deadline must use YYYY-MM-DD format.") from exc
+    return normalized
+
+
+def _normalize_application_priority(value: int) -> int:
+    priority = int(value)
+    if not 1 <= priority <= 5:
+        raise ValueError("Application priority must be between 1 and 5.")
+    return priority
+
+
 def create_application(
     connection: sqlite3.Connection,
     *,
@@ -442,7 +475,16 @@ def create_application(
 ) -> int:
     settings = settings or get_settings()
     timestamp = now_iso(settings.timezone)
-    company_id = ensure_company(connection, name=company_name, settings=settings)
+    normalized_company_name = _normalize_required_application_text(
+        company_name,
+        field_name="Company name",
+    )
+    normalized_stage = _normalize_required_application_text(
+        current_stage,
+        field_name="Current stage",
+    )
+    normalized_priority = _normalize_application_priority(my_priority)
+    company_id = ensure_company(connection, name=normalized_company_name, settings=settings)
     connection.execute(
         """
         INSERT INTO applications (
@@ -453,13 +495,13 @@ def create_application(
         """,
         (
             company_id,
-            route,
-            contact_email,
-            current_stage,
-            next_action,
-            deadline,
-            my_priority,
-            notes,
+            _normalize_optional_application_text(route),
+            _normalize_optional_application_text(contact_email),
+            normalized_stage,
+            _normalize_optional_application_text(next_action),
+            _normalize_application_deadline(deadline),
+            normalized_priority,
+            _normalize_optional_application_text(notes),
             timestamp,
             timestamp,
         ),
@@ -480,23 +522,30 @@ def update_application(
     settings: Settings | None = None,
 ) -> None:
     settings = settings or get_settings()
-    connection.execute(
+    normalized_stage = _normalize_required_application_text(
+        current_stage,
+        field_name="Current stage",
+    )
+    normalized_priority = _normalize_application_priority(my_priority)
+    cursor = connection.execute(
         """
         UPDATE applications
         SET current_stage = ?, next_action = ?, deadline = ?, my_priority = ?,
-            notes = COALESCE(?, notes), updated_at = ?
+            notes = ?, updated_at = ?
         WHERE id = ?
         """,
         (
-            current_stage,
-            next_action,
-            deadline,
-            my_priority,
-            notes,
+            normalized_stage,
+            _normalize_optional_application_text(next_action),
+            _normalize_application_deadline(deadline),
+            normalized_priority,
+            _normalize_optional_application_text(notes),
             now_iso(settings.timezone),
             application_id,
         ),
     )
+    if cursor.rowcount == 0:
+        raise ValueError(f"Application not found: {application_id}")
 
 
 def add_selection_event(

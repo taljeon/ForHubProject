@@ -42,6 +42,8 @@ DISCOVERY_HINTS = (
     "新卒",
 )
 
+SUPPORTED_PARSER_KINDS = {"static_html"}
+
 
 @dataclass
 class ScanResult:
@@ -95,6 +97,15 @@ def _fetch_html(url: str) -> str:
     return response.text
 
 
+def _skip_reason(source_row: sqlite3.Row) -> str | None:
+    if source_row["requires_login"]:
+        return "Skipped: source requires an authenticated session."
+    parser_kind = str(source_row["parser_kind"] or "").strip().lower()
+    if parser_kind not in SUPPORTED_PARSER_KINDS:
+        return f"Skipped: parser_kind '{parser_kind or 'unknown'}' is not supported by the static scanner."
+    return None
+
+
 def _parse_candidates(html: str, base_url: str) -> list[dict[str, Any]]:
     soup = BeautifulSoup(html, "html.parser")
     seen_urls: set[str] = set()
@@ -143,6 +154,24 @@ def scan_source(
     settings: Settings | None = None,
 ) -> ScanResult:
     settings = settings or get_settings()
+    skip_reason = _skip_reason(source_row)
+    if skip_reason:
+        connection.execute(
+            """
+            UPDATE job_sources
+            SET last_error = ?
+            WHERE id = ?
+            """,
+            (skip_reason, source_row["id"]),
+        )
+        return ScanResult(
+            source_name=source_row["source_name"],
+            seed_url=source_row["seed_url"],
+            discovered_posts=0,
+            status="skipped",
+            error=skip_reason,
+        )
+
     checked_at = now_iso(settings.timezone)
     try:
         html = _fetch_html(source_row["seed_url"])
